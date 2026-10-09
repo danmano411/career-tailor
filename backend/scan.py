@@ -13,8 +13,9 @@ routine.json (the app creates one with these defaults; `profile` is yours to fil
 
 "New" is a diff, not a date filter: each board's rows are compared with that board's rows at its last successful
 fetch (state "snap"), like diffing the repo file. Posting dates are unreliable (boards backdate them), and a failed
-fetch leaves the snapshot alone, so a network outage never skips postings. The first fetch of a board only records a
-baseline. Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
+fetch leaves the snapshot alone, so a network outage never skips postings. The first fetch of a board records a
+baseline and screens only the rows the board dates within the last "backfill_hours" (default 24; boards without
+dates contribute nothing). Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
 "https://simplify.jobs/p/{id}") is a readable copy of the posting for sites that need JavaScript.
 Prints a JSON summary on the last stdout line. Fetched pages are untrusted data for the agents.
 """
@@ -225,6 +226,7 @@ def from_listings(src, text):
         keep = (x.get("active", True) and x.get("is_visible", True) and included(x, src.get("include")) and
                 (not src.get("terms") or src["terms"] in (x.get("terms") or [x.get("season", "")])))
         out.append({"keep": keep, "key": x.get("id") or x.get("url", ""), "company": x.get("company_name", ""),
+                    "posted": x.get("date_posted") or 0,
                     "title": x.get("title", ""), "url": x.get("url", ""), "locations": x.get("locations", []),
                     "mirror": src["mirror"].format(id=x.get("id", "")) if src.get("mirror") else "",
                     "note": " · ".join(", ".join(v) if isinstance(v, list) else str(v) for v in (
@@ -241,6 +243,15 @@ def ecr_jobs(html):
     return json.JSONDecoder().raw_decode(payload, i + len('"initialJobs":'))[0]
 
 
+def _when(s):
+    """ISO date/time string -> epoch seconds, 0 when missing or unreadable."""
+    try:
+        t = datetime.datetime.fromisoformat(re.sub(r"(\.\d{1,6})\d*", r"\1", s.strip()).replace("Z", "+00:00"))
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).timestamp()
+    except (AttributeError, ValueError):
+        return 0
+
+
 def from_ecr(src, text):
     out = []
     for x in ecr_jobs(text):
@@ -248,6 +259,7 @@ def from_ecr(src, text):
         keep = (not x.get("closed") and (not countries or "United States" in countries)
                 and included(x, src.get("include")))
         out.append({"keep": keep, "key": x.get("id") or x.get("applyUrl", ""), "company": x.get("company", ""),
+                    "posted": _when(x.get("firstSeenAt") or x.get("postedAt")),
                     "title": x.get("title", ""), "url": x.get("applyUrl", ""), "locations": [x.get("location", "")],
                     "mirror": "", "note": " · ".join(x.get("studentYears", []) + x.get("workAuthorization", []))})
     return out
@@ -293,16 +305,22 @@ def collect(cfg, state, log):
         prev, prev_filters = snaps.get(name), state.setdefault("snap_filters", {}).get(name, filters)
         state["snap_filters"][name] = filters
         snaps[name] = sorted({r["key"] for r in found if r["keep"]})
-        if prev is None:
+        if prev is None:  # first fetch: record a baseline, but still screen what the board dated in the last day
+            since = time.time() - cfg.get("backfill_hours", 24) * 3600
+            prev = {r["key"] for r in found if r["keep"] and r.get("posted", 0) < since}
             counts[name] = f"baseline ({len(snaps[name])} rows recorded)"
-            continue
-        prev = set(prev)
+            if len(prev) == len(snaps[name]):
+                continue
+            prev_filters = filters
+        baseline, prev = counts.get(name, "").startswith("baseline"), set(prev)
         if prev_filters != filters:
             old_keep = {r["key"] for r in PARSERS[src["type"]]({**src, **prev_filters}, text) if r["keep"]}
             prev |= {r["key"] for r in found if r["keep"] and r["key"] not in old_keep}
         added = [r for r in found if r["keep"] and r["key"] not in prev]
         new = [r for r in added if r["url"] and norm(r["url"]) not in seen and not TITLE_SKIP.search(r["title"])]
         counts[name] = f"{len(added)} added, {len(new)} to screen" if len(added) != len(new) else len(new)
+        if baseline:
+            counts[name] = f"baseline ({len(snaps[name])} rows recorded) + {len(new)} from the last day to screen"
         for r in new:
             rows.append({**r, "src": name})
     uniq, keys = [], set()

@@ -1,6 +1,6 @@
 {
   "name": "career-tailor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Paste a job description, tailor your resume's Technical Skills for ATS filters, review every change",
   "author": "danmano411",
@@ -11,7 +11,8 @@
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc -p .",
     "start": "electron .",
-    "package": "npm run build && electron-builder --win --publish never"
+    "package": "npm run build && electron-builder --win --publish never",
+    "package:mac": "npm run build && electron-builder --mac --publish never"
   },
   "build": {
     "appId": "com.danmano411.careertailor",
@@ -50,6 +51,31 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Career Tailor",
       "artifactName": "Career-Tailor-Setup-${version}.exe"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "Career-Tailor-${version}-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "artifactName": "Career-Tailor-${version}-${arch}.${ext}"
     }
   },
   "devDependencies": {

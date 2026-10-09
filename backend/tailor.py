@@ -14,7 +14,7 @@ BACKEND = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND))
 from resume import (allowed_skills, ats, parse, redact, skill_lines, techniques, validate_file, read,  # noqa: E402
                     skills_from_template, parse_skills, sync)
-from render import render  # noqa: E402
+from render import layout_of, render  # noqa: E402
 
 DEFAULT_NAME_FORMAT = "{name} Resume - {company} {role}"
 AGENTS = ("claude",)  # codex CLI / direct API are roadmap items; add a branch in run_agent()
@@ -208,6 +208,9 @@ def run(a):
         if not v["ok"]:
             raise ValueError(f"template {template.name} is invalid: " + "; ".join(v["errors"]))
         rec["template_snapshot"] = read(template)
+        layout = layout_of(template)
+        if layout:  # the template's own layout: render.py prints resume.md with it
+            shutil.copyfile(layout, job / "resume.tex")
         skills = pathlib.Path(a.skills).resolve() if a.skills else work / "skills.md"
         if not skills.is_file():
             skills.parent.mkdir(parents=True, exist_ok=True)

@@ -110,6 +110,16 @@ You can split skills into several `##` sections (`## Languages`, `## Tools`, ...
 except `## Adjacent`, `## Concepts` and `## Techniques`, and except sections whose title contains "domain", "not listed", or "ignore"
 (use those for notes). Anything in neither list is never added.
 
+## Keep your own layout
+
+By default every template is printed with the app's layout (`backend/latex/resume.tex`). To keep your original
+resume's exact look instead, put a LaTeX file with the same name next to the template (`base-resume.tex` for
+`base-resume.md`). It prints everything as you wrote it, except one line that is just `%%SKILLS%%`, which the app
+replaces with one `\skillline{Label}{items}` per Technical Skills line, so the layout must define `\skillline`.
+Wrap the Education date in `\edudate{...}` (also defined by the layout) so it can be dropped for employers that
+ask for no dates. The text must match the markdown template word for word: the render check fails when they differ,
+so edit both when you change a bullet.
+
 ## Convert your existing resume
 
 Give this prompt to Claude Code, Codex, Cursor, or any coding agent, in a folder that contains your resume

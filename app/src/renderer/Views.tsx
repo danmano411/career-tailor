@@ -152,6 +152,13 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
         <Field label="Tools for that" htmlFor="apptools" optional hint={<>Space-separated tools the agent may use, e.g. <code>mcp__claude_ai_Notion</code> (your Notion connector in Claude).</>}>
           <input id="apptools" className="mono" value={s.appliedTools} onChange={(e) => set('appliedTools', e.target.value)} spellCheck={false} />
         </Field>
+        <Field label="Notion database" htmlFor="notiondb" optional hint="Log Applied straight to this Notion database, without the agent (instant, uses no Claude usage). Needs the token below; the instruction above is then not used. Paste the database's own link.">
+          <input id="notiondb" className="mono" value={s.notionDatabase} onChange={(e) => set('notionDatabase', e.target.value)} spellCheck={false}
+            placeholder="https://www.notion.so/<database id>" />
+        </Field>
+        <Field label="Notion token" htmlFor="notiontoken" optional hint={<>An internal integration secret from <code>notion.so/profile/integrations</code>. Share the database with that integration (database ••• → Connections).</>}>
+          <input id="notiontoken" type="password" className="mono" value={s.notionToken} onChange={(e) => set('notionToken', e.target.value)} spellCheck={false} placeholder="ntn_…" />
+        </Field>
       </fieldset>
     </div>
   )

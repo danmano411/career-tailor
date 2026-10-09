@@ -152,7 +152,10 @@ async function applied(id: string): Promise<Run['applied']> {
   changed()
   let res
   try {
-    res = await py('applied.py', [file, '--instruction', s.appliedLog, '--tools', s.appliedTools], { timeout: 600_000 })
+    // Notion token and database set: applied.py writes the row through Notion's API, no agent (token via env, not argv)
+    const notion = s.notionToken && s.notionDatabase ? ['--notion', s.notionDatabase] : []
+    res = await py('applied.py', [file, ...notion, '--instruction', s.appliedLog, '--tools', s.appliedTools],
+      { timeout: 600_000, env: { NOTION_TOKEN: s.notionToken } })
   } finally {
     applying.delete(id)
     changed()
@@ -160,6 +163,20 @@ async function applied(id: string): Promise<Run['applied']> {
   const out = lastJson<Run['applied']>(res.stdout)
   if (!out) throw new Error((res.stderr || res.stdout).trim().slice(-600) || `applied.py exited with code ${res.code}`)
   return out
+}
+
+/** Clicked Applied by mistake: clear the mark so Applied can be pressed again. The logged entry (e.g. the Notion
+ *  row) is not touched; delete it there. */
+function unapply(id: string) {
+  if (applying.has(id)) throw new Error('This application is still being logged.')
+  const r = find(id)
+  const folder = r && folderOf(r)
+  const file = folder ? join(folder, 'run.json') : ''
+  const rec = file ? readJson(file) : null
+  if (!rec) throw new Error('This run has no run.json.')
+  delete (rec as Run).applied
+  writeFileSync(file, JSON.stringify(rec, null, 1), 'utf-8')
+  changed()
 }
 
 async function ats(templatePath: string, resumePath: string, redacted = false): Promise<Ats> {
@@ -277,6 +294,7 @@ ipcMain.handle('posting:fetch', async (_e, url: string) => {
 })
 ipcMain.handle('runs:detail', (_e, id: string) => detail(id))
 ipcMain.handle('runs:applied', (_e, id: string) => applied(id))
+ipcMain.handle('runs:unapply', (_e, id: string) => unapply(id))
 ipcMain.handle('open', (_e, target: OpenTarget, id?: string) => open(target, id))
 ipcMain.handle('openPath', (_e, p: string) => openPath(p))
 ipcMain.handle('pick', (_e, kind: 'folder' | 'file', current: string) => pick(kind, current))
@@ -300,13 +318,17 @@ app.setAppUserModelId('com.danmano411.careertailor') // Windows toasts need it t
 app.whenReady().then(() => {
   loadSettings()
   watchTemplates((t) => win?.webContents.send('templates:changed', t))
-  Menu.setApplicationMenu(null)
+  // macOS needs an app menu for Cmd+C/V/Q and the other edit shortcuts; Windows shows none
+  Menu.setApplicationMenu(process.platform === 'darwin'
+    ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }])
+    : null)
   startRoutine(showWindow, changed)
   // started at login: stay in the tray; the scan routine runs without a window
   if (!process.argv.includes('--background')) showWindow()
 })
 // Closing the window keeps the app (and its scan routine) running in the tray. Ending it: Task Manager.
 app.on('window-all-closed', () => {})
+app.on('activate', () => showWindow()) // macOS: clicking the Dock icon reopens the window
 
 function showWindow() {
   if (win) {

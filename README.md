@@ -32,7 +32,11 @@ job description + your template.md + skills.md
 Windows: download the installer from [GitHub Releases](https://github.com/danmano411/career-tailor/releases)
 (`Career-Tailor-Setup-<version>.exe`).
 
-macOS and Linux: no prebuilt binary yet, [build from source](#build-from-source).
+macOS: download `Career-Tailor-<version>-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel) from
+[GitHub Releases](https://github.com/danmano411/career-tailor/releases). The app is not notarized, so the first time,
+right-click it in Applications → Open, or run `xattr -cr "/Applications/Career Tailor.app"`.
+
+Linux: no prebuilt binary yet, [build from source](#build-from-source).
 
 ## Requirements
 
@@ -89,7 +93,9 @@ notification.
   inside its window, so a laptop that was asleep at noon still scans when it wakes.
 - What counts as new: a diff, not a date filter. Each board is compared with its rows at the last successful
   fetch (boards backdate posting dates, so dates miss real additions). A failed fetch keeps the old snapshot, so
-  an outage delays postings but never skips them. The first fetch of a board only records a baseline.
+  an outage delays postings but never skips them. The first fetch of a board records a baseline and screens only the postings the board dates within the last
+  day (`backfill_hours`, default 24; SimplifyJobs-style lists and Early Career Radar have dates). A job already
+  tailored, by a scan or by you in the app, is never tailored again (matched by job id).
 - Where from: `sources`. `listings-json` (SimplifyJobs-style repos; optional `mirror`, e.g.
   `https://simplify.jobs/p/{id}`, a readable copy for career sites that need JavaScript), `markdown` (any README
   with `| [Name](link) | ... |` tables), `earlycareerradar`, plus `web_search` (an agent searches for recent
@@ -132,6 +138,7 @@ cd app
 npm install
 npm run build
 npm run package     # Windows installer in app/dist
+npm run package:mac # macOS .dmg and .zip (arm64 + x64) in app/dist
 ```
 
 Backend tests:

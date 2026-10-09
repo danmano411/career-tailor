@@ -13,6 +13,7 @@ const api: Api = {
   tailor: (t, jd, url) => ipcRenderer.invoke('runs:tailor', t, jd, url),
   fetchPosting: (url) => ipcRenderer.invoke('posting:fetch', url),
   applied: (id) => ipcRenderer.invoke('runs:applied', id),
+  unapply: (id) => ipcRenderer.invoke('runs:unapply', id),
   detail: (id) => ipcRenderer.invoke('runs:detail', id),
   open: (target, id) => ipcRenderer.invoke('open', target, id),
   onChange: (cb) => on('runs:changed', cb),

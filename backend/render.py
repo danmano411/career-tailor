@@ -1,4 +1,5 @@
 """Markdown-dialect resume -> LaTeX (latex/resume.tex) -> PDF via Tectonic.
+A template with its own <name>.tex layout next to it is printed with that layout instead (see fill_layout).
 
   python render.py <resume.md> <out.pdf>   # prints {"ok", "pages", "letter", "text_ok", "error"} as the last stdout line
   python render.py --test
@@ -11,7 +12,7 @@ import json, os, pathlib, re, shutil, subprocess, sys, tempfile, unicodedata, zl
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from resume import parse, plain, read, SKILL
+from resume import parse, plain, read, skill_lines, SKILL
 
 TEMPLATE = HERE / "latex" / "resume.tex"
 SPECIAL = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
@@ -71,6 +72,29 @@ def to_latex(md):
     return (t.replace("%%NAME%%", tex(d["head"][0].lstrip("# ")))
              .replace("%%CONTACT%%", contact)
              .replace("%%BODY%%", "\n".join(body)))
+
+
+def layout_of(md_path):
+    """A template's own layout: <name>.tex next to <name>.md (the tailor copies it next to resume.md), or None."""
+    p = pathlib.Path(md_path).with_suffix(".tex")
+    return p if p.is_file() else None
+
+
+def fill_layout(md, layout):
+    """A hand-made layout reproduces the original resume exactly; only its `%%SKILLS%%` line is generated, as one
+    \\skillline{Label}{items} per Technical Skills line. Education dates removed from the markdown (redact) also
+    blank the layout's \\edudate{...}."""
+    t = layout.read_text(encoding="utf-8")
+    lines = [l for l in t.split("\n") if l.strip() == "%%SKILLS%%"]
+    if len(lines) != 1:
+        raise ValueError(f"{layout.name} needs exactly one line that is just %%SKILLS%%")
+    d = parse(md)
+    skills = "\n".join(f"\\skillline{{{tex(label)}}}{{{tex(', '.join(items))}}}" for label, items in skill_lines(d).items())
+    t = t.replace(lines[0], skills)
+    edu = next((b for s, b in d["sections"] if s.lower() == "education"), [])
+    if any(b[0] == "entry" and "||" not in b[1] for b in edu):
+        t = t.replace("\\begin{document}", "\\renewcommand{\\edudate}[1]{}\n\\begin{document}", 1)
+    return t
 
 
 # ---------- verification ----------
@@ -150,7 +174,8 @@ def render(md_path, pdf_path):
         pdf = pathlib.Path(pdf_path).resolve()
         with tempfile.TemporaryDirectory() as tmp:  # compile aside so an open PDF viewer can't break the build
             src = pathlib.Path(tmp, pdf.with_suffix(".tex").name)
-            src.write_text(to_latex(md_text), encoding="utf-8")
+            layout = layout_of(md_path)
+            src.write_text(fill_layout(md_text, layout) if layout else to_latex(md_text), encoding="utf-8")
             r = subprocess.run([exe, "--keep-logs", "--outdir", tmp, str(src)],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode:

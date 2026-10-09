@@ -24,6 +24,15 @@ export function RunDetail({ run }: { run: Run }) {
     }
     setClicked(false)
   }
+  const unapply = async () => {
+    setOpenErr('')
+    try {
+      await window.api.unapply(run.id)
+      setApplied(undefined)
+    } catch (e) {
+      setOpenErr(String((e as Error)?.message ?? e))
+    }
+  }
   const finished = run.status === 'done' || run.status === 'failed'
 
   useEffect(() => {
@@ -54,7 +63,10 @@ export function RunDetail({ run }: { run: Run }) {
         <div className="actions">
           <button className="btn btn-primary" disabled={!run.output && !run.pdf && !run.folder} onClick={() => open('pdf')}><Icon name="file" />Open PDF</button>
           {run.status === 'done' && (applied?.ok
-            ? <button className="btn btn-applied" onClick={() => applied.link && open('applied')} title={applied.link ? 'Open the logged entry' : 'Marked applied'}><Icon name="check" />Applied {applied.date}{applied.link && <Icon name="external" size={12} />}</button>
+            ? <>
+                <button className="btn btn-applied" onClick={() => applied.link && open('applied')} title={applied.link ? 'Open the logged entry' : 'Marked applied'}><Icon name="check" />Applied {applied.date}{applied.link && <Icon name="external" size={12} />}</button>
+                <button className="btn" onClick={unapply} title="Clicked Applied by mistake: clear the mark so you can press Applied again later. Delete the logged entry (e.g. the Notion row) yourself.">Undo</button>
+              </>
             : <button className="btn" disabled={applying} onClick={markApplied} title="You applied: mark it, and log it where Settings says (e.g. your Notion table)">
                 <Icon name={applying ? 'spinner' : 'check'} className={applying ? 'spin' : undefined} />{applying ? 'Logging…' : applied ? 'Retry log' : 'Applied'}</button>)}
           <button className="btn" disabled={!run.output && !run.pdf && !run.folder} onClick={() => open('folder')} title="Opens the output folder with this PDF selected"><Icon name="folder" />Show in folder</button>

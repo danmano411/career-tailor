@@ -14,6 +14,8 @@ export interface Settings {
   appliedLog: string
   /** tools that agent may use, space-separated (e.g. an MCP server: mcp__claude_ai_Notion) */
   appliedTools: string
+  notionToken: string
+  notionDatabase: string
 }
 
 /** One template file in the templates folder, with its `resume.py validate` result. */
@@ -112,6 +114,7 @@ export interface Api {
    *  this job id was already tailored (then nothing is fetched) */
   fetchPosting(url: string): Promise<{ text: string; error: string; tailored: string }>
   applied(id: string): Promise<Run['applied']>
+  unapply(id: string): Promise<void>
   detail(id: string): Promise<Detail>
   open(target: OpenTarget, id?: string): Promise<string>
   onChange(cb: () => void): () => void

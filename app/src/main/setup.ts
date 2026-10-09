@@ -1,6 +1,6 @@
 // Settings, backend location, python helper, template discovery/validation, preflight checks.
 import { app } from 'electron'
-import { spawn } from 'child_process'
+import { execFileSync, spawn } from 'child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'fs'
 import { dirname, join, resolve } from 'path'
 import type { Check, Settings, TemplateInfo } from '../shared/types'
@@ -26,6 +26,8 @@ function defaults(): Settings {
     nameFormat: '{name} Resume - {company} {role}',
     appliedLog: '',
     appliedTools: '',
+    notionToken: '',
+    notionDatabase: '',
   }
 }
 
@@ -65,6 +67,8 @@ export function saveSettings(s: Settings): Settings {
     nameFormat: str(s.nameFormat, d.nameFormat),
     appliedLog: typeof s.appliedLog === 'string' ? s.appliedLog.trim() : '',
     appliedTools: str(s.appliedTools, ''),
+    notionToken: str(s.notionToken, ''),
+    notionDatabase: str(s.notionDatabase, ''),
   }
   ensureDirs()
   writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
@@ -81,18 +85,28 @@ function ensureDirs() {
 /** The skills file passed to tailor.py and ats; tailor.py creates it from the template if it doesn't exist. */
 export const skillsPath = () => settings.skillsFile || join(settings.templatesDir, 'skills.md')
 
+// macOS apps opened from Finder get launchd's bare PATH (/usr/bin:/bin:...), which misses claude, Homebrew python3
+// and anything else the user's shell adds: take PATH from a login shell, as a terminal would see it.
+if (process.platform === 'darwin') {
+  try {
+    const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "__PATH__%s" "$PATH"'], { encoding: 'utf-8', timeout: 10_000 })
+    const shellPath = out.split('__PATH__').pop()?.trim()
+    if (shellPath) process.env.PATH = [...new Set([...shellPath.split(':'), ...(process.env.PATH ?? '').split(':')])].filter(Boolean).join(':')
+  } catch { /* keep the inherited PATH */ }
+}
+
 export const PY_ENV = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
 
 export interface Proc { code: number | null; stdout: string; stderr: string }
 
 /** Run a command to completion. `shell` is needed for .cmd shims on Windows (claude). */
-export function exec(cmd: string, args: string[], opts: { shell?: boolean; onLine?: (l: string) => void; timeout?: number } = {}): Promise<Proc> {
+export function exec(cmd: string, args: string[], opts: { shell?: boolean; onLine?: (l: string) => void; timeout?: number; env?: Record<string, string> } = {}): Promise<Proc> {
   return new Promise((res) => {
     let stdout = ''
     let stderr = ''
     let child
     try {
-      child = spawn(cmd, args, { env: PY_ENV, windowsHide: true, shell: opts.shell, timeout: opts.timeout ?? 120_000 })
+      child = spawn(cmd, args, { env: { ...PY_ENV, ...opts.env }, windowsHide: true, shell: opts.shell, timeout: opts.timeout ?? 120_000 })
     } catch (e) {
       return res({ code: null, stdout, stderr: (e as Error).message })
     }
