@@ -152,7 +152,8 @@ async function applied(id: string): Promise<Run['applied']> {
   changed()
   let res
   try {
-    res = await py('applied.py', [file, '--instruction', s.appliedLog, '--tools', s.appliedTools], { timeout: 600_000 })
+    res = await py('applied.py', [file, '--instruction', s.appliedLog, '--tools', s.appliedTools, '--out-dir', s.outputDir],
+      { timeout: 600_000 })
   } finally {
     applying.delete(id)
     changed()

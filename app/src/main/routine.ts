@@ -20,6 +20,7 @@ const DEFAULTS = {
   web_search: true,
   min_fit: 3,
   max_candidates: 60,
+  keep_days: 0, // > 0: each scan deletes scan runs older than this; applied ones are kept (backend/prune.py)
   sources: [
     { name: 'SimplifyJobs', type: 'listings-json', terms: 'Summer 2027',
       url: 'https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json',

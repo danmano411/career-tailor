@@ -73,7 +73,8 @@ When you apply to a job, press **Applied** on its run page. The run is marked ap
 Settings → "When I press Applied" has an instruction, the agent carries it out with the job's company, role, posting
 link and today's date: for example, add a row to a Notion Applications database using your Claude Notion connector
 (set "Tools for that" to `mcp__claude_ai_Notion`). It checks for an existing entry first, so pressing twice doesn't
-duplicate. Nothing is logged when a resume is only tailored.
+duplicate. Nothing is logged when a resume is only tailored. The PDF moves to `<output>/Applied Resumes/`, which is
+never cleaned up, and the run's Open PDF follows it.
 
 ## Job scan routine
 
@@ -99,6 +100,10 @@ notification.
   report. Postings the agent couldn't read get their own section with links, to check by hand.
 - Limits: `max_candidates` screened per scan (the rest wait for the next scan), optional `max_tailor`, `parallel`
   (agent calls at once, default 3).
+- Cleanup: `keep_days` (default 0, keep everything). With e.g. 7, each scan deletes scan runs started more than 7
+  days ago that you didn't mark Applied: the run, its PDF, empty date folders and old `_scans` work files. Applied
+  runs and runs you started yourself are never deleted; reports and the seen-postings state are kept, so a deleted
+  job is not tailored again. `python backend/prune.py ... --dry-run` lists what would go.
 - With the routine on, Career Tailor starts at login (in the tray, no window) and closing the window keeps it
   running. Clicking the shortcut again opens the window. Stop it from Task Manager, or set `"startup": false`.
 

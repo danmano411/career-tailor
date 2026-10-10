@@ -22,7 +22,7 @@ import argparse, concurrent.futures as cf, datetime, html, json, pathlib, re, sy
 
 BACKEND = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND))
-import tailor  # noqa: E402
+import prune, tailor  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CareerTailor/0.2"}  # a full browser UA trips iCIMS bot checks
 TITLE_SKIP = re.compile(r"\b(ph\.?\s?d|master'?s|mba|new grad|senior|sr\.|staff|principal|full[- ]time|technician)\b", re.I)
@@ -464,6 +464,14 @@ def run(a):
     def log(m):
         lines.append(f"{datetime.datetime.now():%H:%M:%S} {m}")
     model, notes = a.model, []
+    if not a.dry_run:  # file applied PDFs; delete scan runs older than keep_days (prune.py)
+        try:
+            p = prune.prune(a.work_dir, a.out_dir, cfg.get("keep_days", 0))
+            if p["pruned"]:
+                notes.append(f"Deleted {p['pruned']} unapplied scan runs from before {p['cutoff']} (keep_days).")
+            notes += [f"Couldn't delete {e}" for e in p["errors"]]
+        except Exception as ex:
+            log(f"prune: {ex}")
 
     if state.get("seen") and state.get("seen_keys") != 2:  # older states keyed "seen" by URL: re-key by job id
         state["seen"] = {norm(u): t for u, t in state["seen"].items()}
