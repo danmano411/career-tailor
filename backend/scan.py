@@ -8,13 +8,15 @@
 
 routine.json (the app creates one with these defaults; `profile` is yours to fill in):
   {"enabled": false, "slots": [...], "profile": "<who you are, work authorization, graduation, target roles>",
-   "sources": [{"name", "type": "listings-json" | "markdown" | "earlycareerradar", "url", "include": {field: [values]},
-                "terms": "Summer 2027"}], "web_search": true, "min_fit": 3, "max_candidates": 60}
+   "sources": [{"name", "type": "listings-json" | "markdown" | "earlycareerradar" | "greenhouse", "url",
+                "include": {field: [values]}, "terms": "Summer 2027", "title": "<regex>"}], "web_search": true, "min_fit": 3, "max_candidates": 60}
 
 "New" is a diff, not a date filter: each board's rows are compared with that board's rows at its last successful
 fetch (state "snap"), like diffing the repo file. Posting dates are unreliable (boards backdate them), and a failed
 fetch leaves the snapshot alone, so a network outage never skips postings. The first fetch of a board only records a
-baseline. Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
+baseline. A "greenhouse" source is one company's board API (https://boards-api.greenhouse.io/v1/boards/<token>/jobs,
+the token is in the company's job links); "name" is the company and "title" a regex the job title must match (e.g.
+"(?=.*intern)(?=.*gnc)"). Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
 "https://simplify.jobs/p/{id}") is a readable copy of the posting for sites that need JavaScript.
 Prints a JSON summary on the last stdout line. Fetched pages are untrusted data for the agents.
 """
@@ -269,7 +271,16 @@ def from_markdown(src, text):
     return out
 
 
-PARSERS = {"listings-json": from_listings, "earlycareerradar": from_ecr, "markdown": from_markdown}
+def from_greenhouse(src, text):
+    """One company's Greenhouse board API; `title` (regex, case-insensitive) narrows it to the roles you want."""
+    return [{"keep": not src.get("title") or bool(re.search(src["title"], x.get("title", ""), re.I)),
+             "key": str(x["id"]), "company": src.get("name", ""), "title": x.get("title", ""),
+             "url": x.get("absolute_url", ""), "locations": [(x.get("location") or {}).get("name", "")],
+             "mirror": "", "note": ""} for x in json.loads(text)["jobs"]]
+
+
+PARSERS = {"listings-json": from_listings, "earlycareerradar": from_ecr, "markdown": from_markdown,
+           "greenhouse": from_greenhouse}
 
 
 def collect(cfg, state, log):
@@ -289,7 +300,7 @@ def collect(cfg, state, log):
         # The snapshot holds the rows that passed the filters, so a posting that is reopened (inactive -> active)
         # counts as new. If the filters changed since, diff with the old ones this once: rows that only pass the
         # new filters were already on the board and would flood the scan.
-        filters = {k: src.get(k) for k in ("include", "terms")}
+        filters = {k: src.get(k) for k in ("include", "terms", "title")}
         prev, prev_filters = snaps.get(name), state.setdefault("snap_filters", {}).get(name, filters)
         state["snap_filters"][name] = filters
         snaps[name] = sorted({r["key"] for r in found if r["keep"]})
@@ -611,6 +622,9 @@ def selftest():
                        '"closed":false,"placeCountries":["United States"],"track":"ML & AI"}]}]')
     html = f"<script>self.__next_f.push([1,{chunk}])</script>"
     assert [r["company"] for r in from_ecr({"include": {"track": ["ML & AI"]}}, html) if r["keep"]] == ["Z"]
+    gh = json.dumps({"jobs": [{"id": 1, "title": "GNC Engineer Intern - Summer 2027", "absolute_url": "g1",
+                               "location": {"name": "Torrance, CA"}}, {"id": 2, "title": "GNC Engineer", "absolute_url": "g2"}]})
+    assert [r["url"] for r in from_greenhouse({"name": "Co", "title": "(?=.*intern)(?=.*gnc)"}, gh) if r["keep"]] == ["g1"]
     assert TITLE_SKIP.search("Software Engineer Intern - PhD") and not TITLE_SKIP.search("Software Engineer Intern")
     jd = "Machine Learning Intern. Responsibilities: build models. " + "x " * 500
     assert looks_like_posting(jd, "Machine Learning Intern") and not looks_like_posting(jd, "Data Center Technician")
