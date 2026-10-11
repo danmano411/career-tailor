@@ -93,7 +93,9 @@ notification.
   an outage delays postings but never skips them. The first fetch of a board only records a baseline.
 - Where from: `sources`. `listings-json` (SimplifyJobs-style repos; optional `mirror`, e.g.
   `https://simplify.jobs/p/{id}`, a readable copy for career sites that need JavaScript), `markdown` (any README
-  with `| [Name](link) | ... |` tables), `earlycareerradar`, plus `web_search` (an agent searches for recent
+  with `| [Name](link) | ... |` tables), `earlycareerradar`, `greenhouse` (one company's board,
+  `https://boards-api.greenhouse.io/v1/boards/<token>/jobs`; `name` is the company, optional `title` regex such as
+  `(?=.*intern)(?=.*gnc)` keeps only matching roles), plus `web_search` (an agent searches for recent
   postings the boards missed).
 - What gets tailored: every readable posting that isn't ruled out by a hard requirement and scores at least
   `min_fit` (1–5, default 3; set 1 to tailor everything you are eligible for and decide yourself). "Uncertain" ones (e.g. an unknown GPA minimum) are tailored too and flagged in the
