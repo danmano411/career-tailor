@@ -21,6 +21,7 @@ const DEFAULTS = {
   min_fit: 3,
   max_candidates: 60,
   keep_days: 0, // > 0: each scan deletes scan runs older than this; applied ones are kept (backend/prune.py)
+  watch_file: '', // optional: a watch.json of research programs to alert on, checked daily (backend/watch.py)
   sources: [
     { name: 'SimplifyJobs', type: 'listings-json', terms: 'Summer 2027',
       url: 'https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json',
@@ -39,8 +40,9 @@ const DEFAULTS = {
 const file = (n: string) => join(app.getPath('userData'), n)
 const CONFIG = () => file('routine.json')
 const read = <T>(p: string, fallback: T): T => { try { return JSON.parse(readFileSync(p, 'utf-8')) } catch { return fallback } }
-const ran = () => read<{ slots: string[]; lastReport?: string; lastFinished?: string; last?: RoutineStatus['last'] }>(
-  file('routine-ran.json'), { slots: [] })
+type Watch = Omit<NonNullable<RoutineStatus['watch']>, 'file'>
+const ran = () => read<{ slots: string[]; lastReport?: string; lastFinished?: string; last?: RoutineStatus['last'];
+  watched?: string; watch?: Watch }>(file('routine-ran.json'), { slots: [] })
 
 export function config(): Config {
   if (!existsSync(CONFIG())) writeFileSync(CONFIG(), JSON.stringify(DEFAULTS, null, 2), 'utf-8')
@@ -73,7 +75,43 @@ export function routineStatus(): RoutineStatus {
   }
   const missed = slots.filter((s) => hm(now) >= s.to && !r.slots.includes(`${day(now)} ${s.label}`)).map((s) => s.label)
   return { enabled: cfg.enabled, running: running && { label: running.label, since: running.since.toISOString() },
-    next: cfg.enabled ? next : null, missed: cfg.enabled ? missed : [], last: r.last, report: r.lastReport ?? '' }
+    next: cfg.enabled ? next : null, missed: cfg.enabled ? missed : [], last: r.last, report: r.lastReport ?? '',
+    watch: cfg.watch_file && r.watch ? { file: String(cfg.watch_file), ...r.watch } : undefined }
+}
+
+/** Research watch add-on: once a day (from 8:00), backend/watch.py checks the programs in routine.json "watch_file"
+ *  and returns alerts (portal open, deadline in 21/7/2/0 days, page changed, new candidates) as notifications. */
+let watching = false
+function watch(cfg: Config) {
+  const f = typeof cfg.watch_file === 'string' ? cfg.watch_file : ''
+  const today = day(new Date())
+  if (!f || watching || !existsSync(f) || ran().watched === today || hm(new Date()) < '08:00') return
+  watching = true
+  const s = getSettings()
+  const child = spawn(s.python, [join(BACKEND, 'watch.py'), '--file', f, '--state', file('watch-state.json'),
+    '--model', s.model], { cwd: BACKEND, env: PY_ENV, windowsHide: true })
+  let out = ''
+  let err = ''
+  child.stdout.on('data', (d) => (out += d))
+  child.stderr.on('data', (d) => (err += d))
+  const done = () => {
+    if (!watching) return
+    watching = false
+    const res = lastJson<Watch & { alerts: { title: string; body: string; url: string }[] }>(out)
+    const r = ran()
+    // a crash still counts as today's check (no retry every 5 minutes); the error shows in the sidebar
+    const w: Watch = res ? { next: res.next, errors: res.errors } : { next: r.watch?.next ?? null,
+      errors: [err.trim().split('\n').pop()?.slice(0, 200) || 'watch.py crashed'] }
+    writeFileSync(file('routine-ran.json'), JSON.stringify({ ...ran(), watched: today, watch: w }), 'utf-8')
+    for (const a of res?.alerts ?? []) {
+      const n = new Notification({ title: a.title, body: a.body })
+      n.on('click', () => (/^https?:\/\//i.test(a.url) ? shell.openExternal(a.url) : shell.openPath(f)))
+      n.show()
+    }
+    onScanDone()
+  }
+  child.on('error', (e) => { err += e.message; done() })
+  child.on('close', done)
 }
 
 let tray: Tray | null = null
@@ -107,7 +145,7 @@ function scan(label: string, onDone: () => void) {
     const last = { finished: new Date().toISOString(), label, tailored: res?.tailored ?? 0, failed: res?.failed ?? 0,
       error: res ? res.error ?? '' : err.trim().split('\n').pop()?.slice(0, 200) || 'scan crashed (see routine-last.log)',
       warnings }
-    writeFileSync(file('routine-ran.json'), JSON.stringify({ slots: [...r.slots.slice(-20), `${day(new Date())} ${label}`],
+    writeFileSync(file('routine-ran.json'), JSON.stringify({ ...r, slots: [...r.slots.slice(-20), `${day(new Date())} ${label}`],
       lastReport: res?.report ?? r.lastReport, lastFinished: last.finished, last }), 'utf-8')
     writeFileSync(file('routine-last.log'), `${out}\n--- stderr ---\n${err}`, 'utf-8')
     const n = res
@@ -165,6 +203,7 @@ export async function startRoutine(show: () => void, scanDone: () => void) {
   refreshTray()
   const tick = () => {
     const c = config()
+    watch(c)
     const slot = c.enabled && due(c)
     if (slot) scan(slot.label, onScanDone)
     else refreshTray()

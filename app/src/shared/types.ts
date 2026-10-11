@@ -102,6 +102,8 @@ export interface RoutineStatus {
   missed: string[]
   last?: { finished: string; label: string; tailored: number; failed: number; error: string; warnings: string[] }
   report: string
+  /** research watch add-on (routine.json "watch_file"): the nearest deadline from today's check */
+  watch?: { file: string; next: { name: string; date: string; days: number } | null; errors: string[] }
 }
 
 export interface Api {

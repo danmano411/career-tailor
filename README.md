@@ -104,6 +104,12 @@ notification.
   days ago that you didn't mark Applied: the run, its PDF, empty date folders and old `_scans` work files. Applied
   runs and runs you started yourself are never deleted; reports and the seen-postings state are kept, so a deleted
   job is not tailored again. `python backend/prune.py ... --dry-run` lists what would go.
+- Research watch (optional add-on): for programs that never reach job boards (REUs, national-lab and university
+  summer research, fellowships). Point `watch_file` at a `watch.json` listing them with their open and due dates
+  (format: top of `backend/watch.py`). Once a day you get a notification when a portal opens and 21, 7, 2 and 0 days
+  before each deadline or milestone. Each program page is checked, and when its dates change (next year's page goes
+  live) an agent re-reads it and updates the entry. Every `discover_days` (0 = off) a web search suggests new
+  programs into `candidates`, for you to move into `programs` yourself. The sidebar shows the next deadline.
 - With the routine on, Career Tailor starts at login (in the tray, no window) and closing the window keeps it
   running. Clicking the shortcut again opens the window. Stop it from Task Manager, or set `"startup": false`.
 

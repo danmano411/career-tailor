@@ -40,7 +40,9 @@ function ScanStatus() {
     : s.next && Date.parse(s.next.at) <= now + 1000 ? ['soon', `Next scan · ${s.next.label}`, 'starting within 5 min']
     : s.next ? ['idle', `Next scan · ${s.next.label}`, `in ${span(Date.parse(s.next.at) - now)} · ${clock(s.next.at)}`]
     : ['off', 'No scan scheduled', '']
-  return (
+  const w = s.watch
+  const dl = w?.next
+  return (<>
     <button className={`scan-status scan-${state} ${problems.length ? 'scan-bad' : ''}`} disabled={!s.report}
       title={s.report ? 'Open the latest scan report' : undefined} onClick={() => window.api.openPath(s.report)}>
       <span className={`dot ${state === 'running' ? 'dot-running' : problems.length ? 'dot-failed' : 'dot-done'}`} />
@@ -51,7 +53,18 @@ function ScanStatus() {
         {problems.map((p) => <span key={p} className="scan-problem">{p}</span>)}
       </span>
     </button>
-  )
+    {w && (
+      <button className={`scan-status scan-idle ${w.errors.length ? 'scan-bad' : ''}`} title="Open the research watchlist"
+        onClick={() => window.api.openPath(w.file)}>
+        <span className={`dot ${w.errors.length ? 'dot-failed' : 'dot-done'}`} />
+        <span className="run-text">
+          <span className="scan-head">{dl ? `Next deadline · ${dl.name}` : 'No research deadlines ahead'}</span>
+          {dl && <span className="run-sub">{new Date(`${dl.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {dl.days ? `in ${dl.days} day${dl.days > 1 ? 's' : ''}` : 'today'}</span>}
+          {w.errors.map((e) => <span key={e} className="scan-problem">{e}</span>)}
+        </span>
+      </button>
+    )}
+  </>)
 }
 
 export function App() {
