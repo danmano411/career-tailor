@@ -136,6 +136,7 @@ so each scan uses agent credits: about one call per 5 postings screened, plus on
 | Agent | `claude` | Claude Code CLI |
 | Model | `sonnet` | Passed to the agent |
 | File name format | `{name} Resume - {company} {role}` | Output PDF name |
+| Early graduation date | empty (off) | e.g. `Dec 2028`, a date you could graduate by. A resume shows it instead of your template's Education date only when the posting explicitly requires graduating by then (e.g. "graduating in 2028"; not "Spring 2028", which it doesn't meet). The run gets a **GRAD YEAR** flag so you use the same date when applying, and the scan screener counts such postings as eligible. |
 
 ## Privacy
 

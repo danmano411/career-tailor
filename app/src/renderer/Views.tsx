@@ -145,6 +145,9 @@ export function SettingsView({ onSaved }: { onSaved: () => void }) {
         <Field label="File name format" htmlFor="fmt" hint={<>Tokens: <code>{'{name}'}</code> <code>{'{company}'}</code> <code>{'{role}'}</code>. Preview: <span className="mono">{preview}.pdf</span></>}>
           <input id="fmt" className="mono" value={s.nameFormat} onChange={(e) => set('nameFormat', e.target.value)} spellCheck={false} />
         </Field>
+        <Field label="Early graduation date" htmlFor="egrad" optional hint='A date you could graduate by if you had to, e.g. "Dec 2028". A resume shows it instead of your template&apos;s date only when the posting requires graduating by then (and the run is flagged); a posting that requires an even earlier date is left alone.'>
+          <input id="egrad" value={s.earlyGrad} onChange={(e) => set('earlyGrad', e.target.value)} placeholder="Dec 2028" spellCheck={false} />
+        </Field>
         <Field label="When I press Applied" htmlFor="applog" optional hint="What the agent does with the job's company, role, posting link and today's date, e.g. add a row to your tracker. Empty: the button only marks the run.">
           <textarea id="applog" rows={4} value={s.appliedLog} onChange={(e) => set('appliedLog', e.target.value)}
             placeholder="Add a row to my Notion Applications database (https://notion.so/...): Name = company and role, Status = Applied, Date = today, Link = posting URL." />

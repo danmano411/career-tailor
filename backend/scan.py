@@ -4,7 +4,7 @@
   python scan.py --fetch <url>     # one posting's text as {"text", "error"} (the app's Link box)
   python scan.py --config routine.json --state routine-state.json --work-dir <runs> --out-dir <pdf dir>
                  --templates-dir <dir> [--reports-dir <dir>] [--skills <skills.md>] [--model sonnet]
-                 [--name-format "..."] [--label noon] [--dry-run]
+                 [--name-format "..."] [--label noon] [--early-grad "Dec 2028"] [--dry-run]
 
 routine.json (the app creates one with these defaults; `profile` is yours to fill in):
   {"enabled": false, "slots": [...], "profile": "<who you are, work authorization, graduation, target roles>",
@@ -415,7 +415,11 @@ def judge(cfg, chunk, scan_dir, jd_dir, digests, model):
         "not), class-standing wording that the graduation date satisfies, preferred/desired qualifications, years "
         "of experience asked of interns, location, on-site days, co-op timing, a major listed among others. Put "
         "those in eligibility_reason as notes. uncertain only when a hard requirement can't be checked from the "
-        "profile. Quote the requirement.\n"
+        "profile. Quote the requirement.\n" + (
+            f"   The candidate could also graduate as early as {cfg['early_grad']}: a posting that explicitly requires "
+            f"graduating by a date that {cfg['early_grad']} meets (\"graduating in {cfg['early_grad'][-4:]}\") is "
+            f"eligible, and its resume will show {cfg['early_grad']}; a required date earlier than that stays "
+            "ineligible.\n" if cfg.get("early_grad") else "") +
         "4. fit 1-5, generous: 5 = software engineering, ML, AI, or data science; 4 = other software or data work "
         "(backend, full-stack, mobile, embedded/firmware software, data engineering, quant dev, security "
         "engineering, robotics/autonomy software); 3 = technical roles where coding helps (QA/test automation, "
@@ -437,7 +441,7 @@ def judge(cfg, chunk, scan_dir, jd_dir, digests, model):
 def tailor_one(a, r, jd_dir, pdf_dir, model):
     ns = argparse.Namespace(template="auto", templates_dir=a.templates_dir, jd_file=str(jd_dir / f"{r['id']}.txt"),
                             work_dir=a.work_dir, out_dir=str(pdf_dir), skills=a.skills, agent="claude", model=model,
-                            id=r["run_id"], name_format=a.name_format, url=r["url"])
+                            id=r["run_id"], name_format=a.name_format, url=r["url"], early_grad=a.early_grad)
     return tailor.run(ns)
 
 
@@ -468,7 +472,8 @@ def report(path, label, since, counts, judged, recs, notes, min_fit=3):
     for r in sorted(ok, key=lambda r: -r["fit"]):
         rec = recs[r["id"]]
         warn = f" ⚠ {cell(r['eligibility_reason'])}" if r["eligibility"] != "eligible" else ""
-        L.append(f"| {r['fit']} | {link(r)}{warn} | {cell(r['deadline'])} | {pathlib.Path(rec['template']).stem} | "
+        grad = f" · **GRAD YEAR: {rec['grad']}**" if rec.get("grad") else ""
+        L.append(f"| {r['fit']} | {link(r)}{warn} | {cell(r['deadline'])} | {pathlib.Path(rec['template']).stem}{grad} | "
                  f"{pathlib.Path(rec['output']).name} | {cell(', '.join(rec.get('new_adjacent') or []))} |")
     sections = [("Couldn't read the posting: check by hand", unread,
                  lambda r: f"fit {r['fit']} from the title: {r['fit_reason']}" if r["fit"] else r["eligibility_reason"]),
@@ -489,6 +494,7 @@ def unjudged(r, why):
 
 def run(a):
     cfg = json.loads(pathlib.Path(a.config).read_text(encoding="utf-8"))
+    cfg["early_grad"] = a.early_grad
     state_path = pathlib.Path(a.state)
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -654,6 +660,7 @@ def main(argv):
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--name-format", default=tailor.DEFAULT_NAME_FORMAT)
     ap.add_argument("--label", default="")
+    ap.add_argument("--early-grad", default="", help="see tailor.py")
     ap.add_argument("--dry-run", action="store_true", help="collect and report new postings; no agents, state untouched")
     a = ap.parse_args(argv)
     lock = pathlib.Path(a.state).with_suffix(".lock")  # one scan at a time: both would rewrite the state file

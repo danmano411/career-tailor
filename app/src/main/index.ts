@@ -92,6 +92,7 @@ function pump() {
     join(BACKEND, 'tailor.py'), '--template', run.template, '--jd-file', jdPath, '--work-dir', s.runsDir,
     '--out-dir', s.outputDir, '--skills', skillsPath(), '--agent', s.agent, '--model', s.model, '--id', id,
     '--name-format', s.nameFormat, '--templates-dir', s.templatesDir, ...(url ? ['--url', url] : []),
+    ...(s.earlyGrad ? ['--early-grad', s.earlyGrad] : []),
   ]
   const child = spawn(s.python, args, { cwd: BACKEND, env: PY_ENV, windowsHide: true })
   let stdout = ''
@@ -163,9 +164,10 @@ async function applied(id: string): Promise<Run['applied']> {
   return out
 }
 
-async function ats(templatePath: string, resumePath: string, redacted = false): Promise<Ats> {
+async function ats(templatePath: string, resumePath: string, redacted = false, grad = ''): Promise<Ats> {
   const skills = skillsPath()
-  const r = await py('resume.py', ['ats', templatePath, resumePath, ...(existsSync(skills) ? ['--skills', skills, ...(redacted ? ['--redact'] : [])] : [])])
+  const r = await py('resume.py', ['ats', templatePath, resumePath, ...(existsSync(skills) ? ['--skills', skills,
+    ...(redacted ? ['--redact'] : []), ...(grad ? ['--grad', grad] : [])] : [])])
   const j = lastJson<Ats>(r.stdout)
   return j
     ? { ok: !!j.ok, errors: j.errors ?? [], added: j.added ?? [], dropped: j.dropped ?? [], reorders: j.reorders ?? [] }
@@ -199,7 +201,7 @@ async function detail(id: string): Promise<Detail> {
   const job = folder ? readText(join(folder, 'job.md')) : null
   const kw = job?.match(/^## Keywords\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1]?.trim() ?? null
   return {
-    ats: hasResume && existsSync(templatePath) ? await ats(templatePath, resumePath, !!r.redacted?.length) : null,
+    ats: hasResume && existsSync(templatePath) ? await ats(templatePath, resumePath, !!r.redacted?.length, r.grad) : null,
     atsAgainst: r.template_snapshot ? 'snapshot' : 'current template',
     template: readText(templatePath),
     resume: hasResume ? readText(resumePath) : null,

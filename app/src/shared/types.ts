@@ -14,6 +14,8 @@ export interface Settings {
   appliedLog: string
   /** tools that agent may use, space-separated (e.g. an MCP server: mcp__claude_ai_Notion) */
   appliedTools: string
+  /** an earlier date you could graduate by (e.g. "Dec 2028"); a resume shows it only when the posting requires it */
+  earlyGrad: string
 }
 
 /** One template file in the templates folder, with its `resume.py validate` result. */
@@ -66,6 +68,9 @@ export interface Run {
   redacted?: string[]
   /** a one-off resume that deviates from its template on purpose: what changed, shown instead of a failed check */
   custom?: string[]
+  /** the early graduation date this resume shows instead of the template's, because the posting requires it (grad_by) */
+  grad?: string
+  grad_by?: string
   /** the Applied log is running right now (kept in the main process, so it survives switching runs) */
   applying?: boolean
   /** set when you pressed Applied; link = the entry the agent logged it to */

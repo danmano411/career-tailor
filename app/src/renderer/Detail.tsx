@@ -41,6 +41,7 @@ export function RunDetail({ run }: { run: Run }) {
           <div className="eyebrow">
             <StatusPill r={run} />
             <span className="tag tag-lg" title={run.template}>{run.auto && <Icon name="wand" size={12} />}{templateName(run.template)}</span>
+            {run.grad && <span className="tag tag-lg tag-grad">GRAD YEAR: {run.grad}</span>}
           </div>
           <h1>{run.company || run.title || 'Untitled posting'}</h1>
           {run.role && <p className="role">{run.role}</p>}
@@ -109,10 +110,21 @@ function Review({ run, d }: { run: Run; d: Detail }) {
           <div className="integrity ok">
             <span className="integrity-icon"><Icon name="shield" size={18} /></span>
             <div>
-              <strong>Only Technical Skills changed{run.redacted?.length ? ', plus the redaction below' : ''} ✓</strong>
+              <strong>Only Technical Skills changed{run.redacted?.length ? ', plus the redaction below' : run.grad ? ', plus the graduation date below' : ''} ✓</strong>
               <p>resume.py ats compared resume.md to the {d.atsAgainst === 'snapshot' ? 'template as it was at run time' : 'current template'}: every other section is identical and every skill is in your skills file.</p>
             </div>
           </div>
+          {run.grad && (
+            <div className="integrity redacted">
+              <span className="integrity-icon"><Icon name="pen" size={18} /></span>
+              <div>
+                <strong>GRAD YEAR: {run.grad}</strong>
+                <p>The posting requires graduating by {run.grad_by}, so this resume shows your early graduation date
+                  ({run.grad}) instead of the template&apos;s. Use the same date in the application form. The integrity check
+                  allows exactly this change to the Education line.</p>
+              </div>
+            </div>
+          )}
           {!!run.redacted?.length && (
             <div className="integrity redacted">
               <span className="integrity-icon"><Icon name="pen" size={18} /></span>

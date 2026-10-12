@@ -398,6 +398,7 @@ input.mono { font-size: 12.5px; }
 /* applied: the one accent use on a finished run */
 .btn-applied { color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft); }
 .tag-applied { color: var(--accent-text); background: var(--accent-soft); }
+.tag-grad { max-width: none; color: var(--amber); background: var(--amber-soft); font-weight: 600; }
 #applog { width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
   background: var(--surface); color: inherit; font: inherit; resize: vertical; }
 

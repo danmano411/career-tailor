@@ -4,6 +4,8 @@
   python tailor.py --template <path.md | auto> --jd-file <path> --work-dir <dir> --out-dir <dir> [--skills <skills.md>]
                    [--templates-dir <dir>  (required with --template auto: the agent picks the best-fitting template)]
                    [--agent claude] [--model sonnet] [--id <id>] [--name-format "{name} Resume - {company} {role}"]
+                   [--early-grad "Dec 2028"  (the resume's Education date becomes this when the posting requires
+                    graduating by a date the template's date misses and this one meets; recorded as "grad")]
 
 Prints the run record as JSON on the last stdout line and writes it to <work-dir>/<date>-<company>-<role>/run.json.
 Exit 1 on failure (the record has "error"). The pasted job description is untrusted data for the agent.
@@ -12,8 +14,8 @@ import argparse, datetime, json, os, pathlib, re, shutil, subprocess, sys, time,
 
 BACKEND = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND))
-from resume import (allowed_skills, ats, parse, redact, skill_lines, techniques, validate_file, read,  # noqa: E402
-                    skills_from_template, parse_skills, sync)
+from resume import (allowed_skills, ats, parse, redact, regrad, skill_lines, techniques, validate_file, read,  # noqa: E402
+                    skills_from_template, parse_skills, sync, use_early_grad)
 from render import render  # noqa: E402
 
 DEFAULT_NAME_FORMAT = "{name} Resume - {company} {role}"
@@ -30,8 +32,10 @@ SCHEMA = {
         "new_adjacent": {"type": "array", "items": {"type": "string"}},
         "gaps": {"type": "array", "items": {"type": "string"}},
         "error": {"type": "string", "description": "empty unless ok is false"},
+        "grad_by": {"type": "string", "description": "the latest graduation date the posting explicitly requires, "
+                    "e.g. \"2028\" or \"Jun 2028\"; empty if it states none"},
     },
-    "required": ["ok", "company", "role", "pdf", "skills_added", "new_adjacent", "gaps", "error"],
+    "required": ["ok", "company", "role", "pdf", "skills_added", "new_adjacent", "gaps", "error", "grad_by"],
 }
 
 
@@ -95,13 +99,16 @@ def needs_redaction(company):
     return any(re.match(rf"{c}\b", company.strip().lower()) for c in REDACT_EDUCATION_DATES)
 
 
-def finish_locally(template, skills, job, redacted=False):
+def finish_locally(template, skills, job, redacted=False, grad=None):
     """Run the ats check and the render here: when the agent wrote resume.md but couldn't run them, or after
-    redacting Education dates."""
+    redacting Education dates or putting in the early graduation date."""
     if redacted:
         (job / "resume.md").write_text(redact(read(job / "resume.md")), encoding="utf-8")
+    elif grad:
+        (job / "resume.md").write_text(regrad(read(job / "resume.md"), grad), encoding="utf-8")
     allowed, refused = allowed_skills(read(skills))
-    errs = ats(read(template), read(job / "resume.md"), allowed, redacted, refused, techniques(read(skills)))[0]
+    errs = ats(read(template), read(job / "resume.md"), allowed, redacted, refused, techniques(read(skills)),
+               None if redacted else grad)[0]
     if errs:
         raise RuntimeError("the agent's resume.md fails the ats check: " + "; ".join(errs))
     rr = render(job / "resume.md", job / "resume.pdf")
@@ -239,6 +246,9 @@ def run(a):
         if needs_redaction(res["company"]):
             pdf = finish_locally(template, skills, job, redacted=True)
             rec["redacted"] = ["Education dates"]
+        elif a.early_grad and use_early_grad(rec["template_snapshot"], a.early_grad, res.get("grad_by", "")):
+            pdf = finish_locally(template, skills, job, grad=a.early_grad)
+            rec.update(grad=a.early_grad, grad_by=res["grad_by"])
         dest_dir = pathlib.Path(a.out_dir).resolve()
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / out_name(a.name_format, clean(v["name"]), clean(res["company"]), clean(res["role"]))
@@ -279,6 +289,7 @@ def main(argv):
     ap.add_argument("--id", default=None)
     ap.add_argument("--url", default="", help="the posting's link, recorded in the run (else taken from job.md)")
     ap.add_argument("--name-format", default=DEFAULT_NAME_FORMAT)
+    ap.add_argument("--early-grad", default="")
     a = ap.parse_args(argv)
     a.id = clean(a.id or uuid.uuid4().hex[:8]).replace(" ", "-")
     rec = run(a)

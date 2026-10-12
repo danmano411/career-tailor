@@ -89,4 +89,8 @@ were appended to the skills file), and gaps (posting skills with no neighbor in 
 
 ok (true only if ats and render both passed), company, role, pdf (absolute path of `{job_dir}/resume.pdf`),
 skills_added (skills now in Technical Skills that the template did not have), new_adjacent (the Adjacent skills you
-appended, each as "Skill · <kind>: <evidence>"), gaps, and error (empty unless ok is false).
+appended, each as "Skill · <kind>: <evidence>"), gaps, error (empty unless ok is false), and grad_by: the latest
+graduation date the posting explicitly requires, as "Mon YYYY", or just "YYYY" when it gives only a year ("graduating
+in 2028", "class of 2028", "expected graduation between Dec 2027 and Jun 2028" -> "Jun 2028"; a season becomes its last
+month: Spring -> May, Summer -> Aug, Fall -> Dec). Empty when the posting states no latest graduation date (a window
+with no end, "rising juniors", or nothing). Never guess. You don't change any dates: the app does that.

@@ -133,7 +133,7 @@ function scan(label: string, onDone: () => void, key = `${day(new Date())} ${lab
   refreshTray()
   const args = [join(BACKEND, 'scan.py'), '--config', CONFIG(), '--state', file('routine-state.json'),
     '--work-dir', s.runsDir, '--out-dir', s.outputDir, '--templates-dir', s.templatesDir, '--skills', skillsPath(),
-    '--model', s.model, '--name-format', s.nameFormat, '--label', label,
+    '--model', s.model, '--name-format', s.nameFormat, '--label', label, ...(s.earlyGrad ? ['--early-grad', s.earlyGrad] : []),
     ...(cfg.reports_dir ? ['--reports-dir', cfg.reports_dir] : [])]
   const child = spawn(s.python, args, { cwd: BACKEND, env: PY_ENV, windowsHide: true })
   const tick = setInterval(onDone, 15_000) // runs finish one by one during a scan: show them as they land

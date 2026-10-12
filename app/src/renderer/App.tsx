@@ -138,6 +138,7 @@ export function App() {
                 {r.role && <span className="run-role" title={r.role}>{r.role}</span>}
                 <span className="run-sub">
                   <span className="tag">{templateName(r.template)}</span>
+                  {r.grad && <span className="tag tag-grad">GRAD YEAR: {r.grad}</span>}
                   {r.applying ? <span className="tag tag-applied">logging…</span> : r.applied?.ok && <span className="tag tag-applied">applied</span>}
                   {r.status === 'running' ? `running ${elapsed(r.started)}` : r.status === 'queued' ? 'queued' : r.status === 'failed' ? 'failed' : when(r.finished || r.started)}
                 </span>

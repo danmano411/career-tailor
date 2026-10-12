@@ -2,8 +2,9 @@
 (exit 0 ok, 1 failure).
 
   python resume.py validate <template.md> [--render]       # dialect + structure check; --render also checks 1 page
-  python resume.py ats <template.md> <resume.md> --skills <skills.md> [--redact]   # only Technical Skills may differ
-                                                           # (--redact: Education dates may be removed, see redact())
+  python resume.py ats <template.md> <resume.md> --skills <skills.md> [--redact] [--grad "Dec 2028"]
+                         # only Technical Skills may differ (--redact: Education dates may be removed, see redact();
+                         # --grad: the Education date is that earlier graduation date, see regrad())
   python resume.py sync <name[.md|.txt]>                   # fuse a .md/.txt pair: newer mtime is copied over the other
   python resume.py --test
 
@@ -242,10 +243,53 @@ def redact(md):
     return "\n".join(out)
 
 
-def ats(template_md, new_md, allowed, redacted=False, refused=None, placement=None):
+MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+SEASONS = {"spring": 5, "summer": 8, "fall": 12, "autumn": 12, "winter": 12}
+
+
+def month_year(s):
+    """"May 2029" / "December 2028" / "Fall 2028" -> (2029, 5); a bare "2028" -> (2028, 12), the whole year. None if
+    there's no year."""
+    s = (s or "").lower()
+    y = re.search(r"\b(20\d\d)\b", s)
+    if not y:
+        return None
+    m = next((i + 1 for i, mon in enumerate(MONTHS) if re.search(rf"\b{mon}", s)), None)
+    m = m or next((v for k, v in SEASONS.items() if k in s), 12)
+    return int(y.group(1)), m
+
+
+def regrad(md, date):
+    """Education entries' dates -> date. For a posting that requires graduating by a date the resume's (planned) date
+    misses but an earlier possible one meets: declared in the run, and the ats check allows exactly this change."""
+    out, sec = [], ""
+    for line in md.split("\n"):
+        if line.startswith("## "):
+            sec = line[3:].strip().lower()
+        if sec == "education" and line.startswith("### ") and "||" in line:
+            line = f"{line.split('||')[0].rstrip()} || {date}"
+        out.append(line)
+    return "\n".join(out)
+
+
+def edu_date(md):
+    """The first Education entry's date ("May 2029"), or ""."""
+    old, new = md.split("\n"), regrad(md, "\0").split("\n")
+    return next((o.split("||")[1].strip() for o, n in zip(old, new) if n.endswith("\0")), "")
+
+
+def use_early_grad(template_md, early, grad_by):
+    """-> True when the posting's latest accepted graduation (grad_by: "2028", "Dec 2028") is before the template's
+    date and the early date meets it. "Spring 2028" max is not met by Dec 2028, so nothing changes there."""
+    planned, soon, limit = month_year(edu_date(template_md)), month_year(early), month_year(grad_by)
+    return bool(planned and soon and limit) and soon <= limit < planned
+
+
+def ats(template_md, new_md, allowed, redacted=False, refused=None, placement=None, grad=None):
     """-> (errors, added, dropped, reorders). Everything but Technical Skills must equal the template (with its
     Education dates removed when redacted: the one other change a resume may carry, declared, never silent).
     placement (techniques()): a technique must sit on its line."""
+    template_md = regrad(template_md, grad) if grad else template_md
     t, n, errs = parse(redact(template_md) if redacted else template_md), parse(new_md), []
     if t["head"] != n["head"]:
         errs.append("header/contact lines changed")
@@ -399,6 +443,13 @@ def selftest():
     assert repeated_openers(dup) == ["Work Experience: 'trained' opens 2 bullets"], repeated_openers(dup)
     edu = "# A\n\n## Education\n### **School**, City || May 2029\n\n## Work Experience\n### **Job** || Jan 2025\n- Did a thing\n"
     assert redact(edu) == edu.replace(" || May 2029", ""), redact(edu)  # only Education dates go
+    assert regrad(edu, "Dec 2028") == edu.replace("May 2029", "Dec 2028") and edu_date(edu) == "May 2029"
+    assert use_early_grad(edu, "Dec 2028", "2028") and use_early_grad(edu, "Dec 2028", "December 2028")
+    assert not use_early_grad(edu, "Dec 2028", "Spring 2028") and not use_early_grad(edu, "Dec 2028", "Jun 2028")
+    assert not use_early_grad(edu, "Dec 2028", "2029") and not use_early_grad(edu, "Dec 2028", "")
+    assert not use_early_grad(edu, "", "2028")
+    assert ats(edu, regrad(edu, "Dec 2028"), set(), grad="Dec 2028")[0] == []
+    assert ats(edu, regrad(edu, "Dec 2028"), set())[0], "an unannounced date change fails"
     print("selftest ok")
 
 
@@ -420,12 +471,14 @@ def main(a):
             elif not rr["ok"]:
                 res["warnings"].append(f"test render failed: {rr['error']}")
         emit(res, res["ok"])
-    elif a[:1] == ["ats"] and len(a) in (5, 6) and a[3] == "--skills" and a[5:] in ([], ["--redact"]):
+    elif a[:1] == ["ats"] and len(a) >= 5 and a[3] == "--skills" and a[5:] in (
+            [], ["--redact"], ["--grad", *a[6:7]], ["--redact", "--grad", *a[7:8]]) and a[-1] != "--grad":
         try:
             sk = read(a[4])
             allowed, refused = allowed_skills(sk)
-            errs, added, dropped, reo = ats(read(a[1]), read(a[2]), allowed, a[5:] == ["--redact"], refused,
-                                            techniques(sk))
+            grad = a[a.index("--grad") + 1] if "--grad" in a else None
+            errs, added, dropped, reo = ats(read(a[1]), read(a[2]), allowed, "--redact" in a, refused,
+                                            techniques(sk), grad)
         except (OSError, UnicodeDecodeError, ValueError) as ex:
             emit({"ok": False, "errors": [f"{type(ex).__name__}: {ex}"], "added": [], "dropped": [], "reorders": []}, False)
         emit({"ok": not errs, "errors": errs, "added": added, "dropped": dropped, "reorders": reo}, not errs)

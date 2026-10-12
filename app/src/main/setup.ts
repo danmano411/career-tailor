@@ -26,6 +26,7 @@ function defaults(): Settings {
     nameFormat: '{name} Resume - {company} {role}',
     appliedLog: '',
     appliedTools: '',
+    earlyGrad: '',
   }
 }
 
@@ -65,6 +66,7 @@ export function saveSettings(s: Settings): Settings {
     nameFormat: str(s.nameFormat, d.nameFormat),
     appliedLog: typeof s.appliedLog === 'string' ? s.appliedLog.trim() : '',
     appliedTools: str(s.appliedTools, ''),
+    earlyGrad: str(s.earlyGrad, ''),
   }
   ensureDirs()
   writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
