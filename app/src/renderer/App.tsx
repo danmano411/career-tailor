@@ -33,6 +33,7 @@ function ScanStatus() {
     ...(last?.failed ? [`${last.failed} tailor${last.failed > 1 ? 's' : ''} failed last scan`] : []),
     ...(last?.warnings ?? []),
     ...s.missed.map((m) => `Today's ${m} scan didn't run (PC asleep or app closed?)`),
+    ...(s.cut ? [`${s.cut.label} scan from ${clock(s.cut.since)} was cut off (shutdown or app closed) · ${s.running ? 'rerunning now' : 'reruns within 5 min'}`] : []),
   ]
   const [state, head, sub] = s.running
     ? ['running', `Scanning · ${s.running.label}`, `started ${clock(s.running.since)} · ${span(now - Date.parse(s.running.since))}`]
@@ -49,7 +50,7 @@ function ScanStatus() {
       <span className="run-text">
         <span className="scan-head">{head}</span>
         {sub && <span className="run-sub">{sub}</span>}
-        {last && !s.running && <span className="run-sub">last: {last.label} {clock(last.finished)} · {last.tailored} tailored</span>}
+        {last && !s.running && <span className="run-sub">last: {last.label} {clock(last.finished)} · {last.tailored} tailored{last.rerunOf ? ` · rerun of the ${clock(last.rerunOf)} scan that was cut off` : ''}</span>}
         {problems.map((p) => <span key={p} className="scan-problem">{p}</span>)}
       </span>
     </button>

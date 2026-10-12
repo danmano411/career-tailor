@@ -100,7 +100,11 @@ export interface RoutineStatus {
   running: { label: string; since: string } | null
   next: { label: string; at: string } | null
   missed: string[]
-  last?: { finished: string; label: string; tailored: number; failed: number; error: string; warnings: string[] }
+  last?: { finished: string; label: string; tailored: number; failed: number; error: string; warnings: string[]
+    /** this scan reran one that was cut off (shutdown or app closed) at this time */
+    rerunOf?: string }
+  /** a scan that started and never finished; it reruns at the next check */
+  cut?: { label: string; since: string }
   report: string
   /** research watch add-on (routine.json "watch_file"): the nearest deadline from today's check */
   watch?: { file: string; next: { name: string; date: string; days: number } | null; errors: string[] }

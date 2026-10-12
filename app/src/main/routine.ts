@@ -41,8 +41,12 @@ const file = (n: string) => join(app.getPath('userData'), n)
 const CONFIG = () => file('routine.json')
 const read = <T>(p: string, fallback: T): T => { try { return JSON.parse(readFileSync(p, 'utf-8')) } catch { return fallback } }
 type Watch = Omit<NonNullable<RoutineStatus['watch']>, 'file'>
+/** A scan that has started: `key` is the slot it marks done when it finishes ("2026-10-12 noon"). */
+type Started = { label: string; key: string; since: string }
 const ran = () => read<{ slots: string[]; lastReport?: string; lastFinished?: string; last?: RoutineStatus['last'];
-  watched?: string; watch?: Watch }>(file('routine-ran.json'), { slots: [] })
+  watched?: string; watch?: Watch; inflight?: Started; cut?: Started }>(file('routine-ran.json'), { slots: [] })
+const saveRan = (patch: Partial<ReturnType<typeof ran>>) =>
+  writeFileSync(file('routine-ran.json'), JSON.stringify({ ...ran(), ...patch }), 'utf-8') // undefined = remove
 
 export function config(): Config {
   if (!existsSync(CONFIG())) writeFileSync(CONFIG(), JSON.stringify(DEFAULTS, null, 2), 'utf-8')
@@ -73,9 +77,11 @@ export function routineStatus(): RoutineStatus {
     const at = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m)
     next = { label: s.label, at: (at < now ? now : at).toISOString() }
   }
-  const missed = slots.filter((s) => hm(now) >= s.to && !r.slots.includes(`${day(now)} ${s.label}`)).map((s) => s.label)
+  const missed = slots.filter((s) => hm(now) >= s.to && ![...r.slots, r.cut?.key].includes(`${day(now)} ${s.label}`))
+    .map((s) => s.label)
   return { enabled: cfg.enabled, running: running && { label: running.label, since: running.since.toISOString() },
     next: cfg.enabled ? next : null, missed: cfg.enabled ? missed : [], last: r.last, report: r.lastReport ?? '',
+    cut: r.cut && { label: r.cut.label, since: r.cut.since },
     watch: cfg.watch_file && r.watch ? { file: String(cfg.watch_file), ...r.watch } : undefined }
 }
 
@@ -117,11 +123,13 @@ function watch(cfg: Config) {
 let tray: Tray | null = null
 let running: { label: string; since: Date } | null = null
 
-function scan(label: string, onDone: () => void) {
+function scan(label: string, onDone: () => void, key = `${day(new Date())} ${label}`) {
   if (running) return
   const s = getSettings()
   const cfg = config()
   running = { label, since: new Date() }
+  const rerun = ran().cut?.key === key ? ran().cut : undefined
+  saveRan({ inflight: { label, key, since: running.since.toISOString() } }) // still here at next launch = cut off
   refreshTray()
   const args = [join(BACKEND, 'scan.py'), '--config', CONFIG(), '--state', file('routine-state.json'),
     '--work-dir', s.runsDir, '--out-dir', s.outputDir, '--templates-dir', s.templatesDir, '--skills', skillsPath(),
@@ -136,16 +144,27 @@ function scan(label: string, onDone: () => void) {
   const finish = () => {
     clearInterval(tick)
     if (!running) return
+    const since = running.since.toISOString()
     running = null
     const res = lastJson<Result>(out)
-    if (res?.error?.startsWith('another scan')) { refreshTray(); return } // a manual scan is running: retry next tick
+    if (res?.error?.startsWith('another scan')) { saveRan({ inflight: undefined }); refreshTray(); return } // retry next tick
+    // No result: killed (a shutdown can kill python before the app) or crashed. Rerun once instead of marking the
+    // slot done; a rerun that also dies counts as done, so a scan that always crashes can't loop.
+    if (!res && !rerun) {
+      saveRan({ inflight: undefined, cut: { label, key, since } })
+      writeFileSync(file('routine-last.log'), `${out}\n--- stderr ---\n${err}`, 'utf-8')
+      refreshTray()
+      onDone()
+      return
+    }
     const r = ran()
     // boards that couldn't be fetched (their postings wait for the next scan) and a scan that crashed show in the app
     const warnings = Object.entries(res?.counts ?? {}).filter(([, v]) => String(v).startsWith('error')).map(([k]) => `${k} unreachable`)
     const last = { finished: new Date().toISOString(), label, tailored: res?.tailored ?? 0, failed: res?.failed ?? 0,
       error: res ? res.error ?? '' : err.trim().split('\n').pop()?.slice(0, 200) || 'scan crashed (see routine-last.log)',
-      warnings }
-    writeFileSync(file('routine-ran.json'), JSON.stringify({ ...r, slots: [...r.slots.slice(-20), `${day(new Date())} ${label}`],
+      warnings, ...(rerun ? { rerunOf: rerun.since } : {}) }
+    writeFileSync(file('routine-ran.json'), JSON.stringify({ ...r, inflight: undefined,
+      cut: r.cut?.key === key ? undefined : r.cut, slots: [...r.slots.slice(-20), key],
       lastReport: res?.report ?? r.lastReport, lastFinished: last.finished, last }), 'utf-8')
     writeFileSync(file('routine-last.log'), `${out}\n--- stderr ---\n${err}`, 'utf-8')
     const n = res
@@ -200,12 +219,20 @@ export async function startRoutine(show: () => void, scanDone: () => void) {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: cfg.enabled && cfg.startup, args: ['--background'] })
   tray = new Tray(appIcon(16) ?? await app.getFileIcon(process.execPath, { size: 'small' }))
   tray.on('click', () => show())
+  // A scan recorded as started but never finished died with the PC or the app: note it and rerun it (below).
+  const r = ran()
+  if (r.inflight) {
+    saveRan({ inflight: undefined, cut: r.inflight })
+    new Notification({ title: `Job scan (${r.inflight.label}) was cut off`,
+      body: `It started ${new Date(r.inflight.since).toLocaleString()} and didn't finish (shutdown or app closed). Rerunning it now.` }).show()
+  }
   refreshTray()
   const tick = () => {
     const c = config()
     watch(c)
-    const slot = c.enabled && due(c)
-    if (slot) scan(slot.label, onScanDone)
+    const cut = ran().cut // rerun a cut-off scan first, even after its window closed; it marks its own slot done
+    const slot = c.enabled && (cut ? { label: cut.label, key: cut.key } : due(c))
+    if (slot) scan(slot.label, onScanDone, 'key' in slot ? slot.key : undefined)
     else refreshTray()
   }
   setInterval(tick, 5 * 60 * 1000)

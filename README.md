@@ -87,7 +87,9 @@ notification.
   `profile` (school, graduation date, class standing, work authorization, target roles, locations). The screener
   judges eligibility from it, so be specific.
 - When: `slots` are time windows (default 11:45–14:30 and 18:00–21:00). Each runs once a day, at the first check
-  inside its window, so a laptop that was asleep at noon still scans when it wakes.
+  inside its window, so a laptop that was asleep at noon still scans when it wakes. A scan cut off by a shutdown or by closing the app
+  is noticed at the next launch (notification, and a note in the sidebar) and rerun right away, even after its window
+  closed.
 - What counts as new: a diff, not a date filter. Each board is compared with its rows at the last successful
   fetch (boards backdate posting dates, so dates miss real additions). A failed fetch keeps the old snapshot, so
   an outage delays postings but never skips them. The first fetch of a board only records a baseline.

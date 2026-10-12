@@ -20,7 +20,7 @@ the token is in the company's job links); "name" is the company and "title" a re
 "https://simplify.jobs/p/{id}") is a readable copy of the posting for sites that need JavaScript.
 Prints a JSON summary on the last stdout line. Fetched pages are untrusted data for the agents.
 """
-import argparse, concurrent.futures as cf, datetime, html, json, pathlib, re, sys, time, urllib.parse, urllib.request
+import argparse, concurrent.futures as cf, datetime, html, json, os, pathlib, re, sys, time, urllib.parse, urllib.request
 
 BACKEND = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND))
@@ -573,6 +573,38 @@ def run(a):
     return {"report": str(out), "new": len(rows), "tailored": ok, "failed": len(recs) - ok, "counts": counts}
 
 
+def alive(pid):
+    """Is process `pid` still running? (os.kill(pid, 0) would terminate it on Windows.)"""
+    if os.name == "nt":
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
+
+
+def held(lock):
+    """A lock is held while the scan that wrote it runs. A shutdown mid-scan leaves the file behind: its pid is dead,
+    so the next scan goes ahead instead of waiting out the 4-hour cap (which outlasts a whole time window)."""
+    if not lock.exists() or time.time() - lock.stat().st_mtime > 4 * 3600:
+        return False
+    try:
+        return alive(int(json.loads(lock.read_text(encoding="utf-8"))["pid"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return True  # an old-format lock (just a timestamp): keep the age rule
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     for f in ("--config", "--state", "--work-dir", "--out-dir", "--templates-dir"):
@@ -585,10 +617,10 @@ def main(argv):
     ap.add_argument("--dry-run", action="store_true", help="collect and report new postings; no agents, state untouched")
     a = ap.parse_args(argv)
     lock = pathlib.Path(a.state).with_suffix(".lock")  # one scan at a time: both would rewrite the state file
-    if lock.exists() and time.time() - lock.stat().st_mtime < 4 * 3600:
+    if held(lock):
         print(json.dumps({"error": f"another scan is running (started {time.ctime(lock.stat().st_mtime)})"}))
         return 1
-    lock.write_text(str(time.time()), encoding="utf-8")
+    lock.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
     try:
         print(json.dumps(run(a), ensure_ascii=False))
     finally:
@@ -625,6 +657,15 @@ def selftest():
     gh = json.dumps({"jobs": [{"id": 1, "title": "GNC Engineer Intern - Summer 2027", "absolute_url": "g1",
                                "location": {"name": "Torrance, CA"}}, {"id": 2, "title": "GNC Engineer", "absolute_url": "g2"}]})
     assert [r["url"] for r in from_greenhouse({"name": "Co", "title": "(?=.*intern)(?=.*gnc)"}, gh) if r["keep"]] == ["g1"]
+    import subprocess, tempfile
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    lk = pathlib.Path(tempfile.mkdtemp()) / "s.lock"
+    assert not held(lk)
+    lk.write_text(json.dumps({"pid": os.getpid()}))
+    assert alive(os.getpid()) and held(lk)
+    lk.write_text(json.dumps({"pid": dead.pid}))  # the scan died (shutdown): its lock no longer blocks
+    assert not alive(dead.pid) and not held(lk)
     assert TITLE_SKIP.search("Software Engineer Intern - PhD") and not TITLE_SKIP.search("Software Engineer Intern")
     jd = "Machine Learning Intern. Responsibilities: build models. " + "x " * 500
     assert looks_like_posting(jd, "Machine Learning Intern") and not looks_like_posting(jd, "Data Center Technician")
