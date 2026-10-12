@@ -184,6 +184,7 @@ def job_key(url):
     site = host.split(".")[0] if any(s in host for s in ("myworkdayjobs", "icims", "eightfold", "oraclecloud")) else host
     for pat in (r"_((?:JR|R|REQ)[-_]?\d[\w-]*)$",  # Workday: ..._JR-202621695, _R51031-1
                 r"_(\d{5,}(?:-\d+)?)$",             # Workday: ..._591469
+                r"/jobs/results/(\d{6,})",          # Google: .../results/7566...-title-slug
                 r"/jobs?/(\d{4,})"):                 # iCIMS, Amazon, Eightfold, Oracle, ...
         m = re.search(pat, path.rstrip("/"), re.I)
         if m:
@@ -666,6 +667,8 @@ def selftest():
     assert alive(os.getpid()) and held(lk)
     lk.write_text(json.dumps({"pid": dead.pid}))  # the scan died (shutdown): its lock no longer blocks
     assert not alive(dead.pid) and not held(lk)
+    g = "https://{}google.com/about/careers/applications/jobs/results/75665705386549958{}"
+    assert job_key(g.format("www.", "")) == job_key(g.format("", "-forward-deployed-engineering-intern-bsms-summer-2027"))
     assert TITLE_SKIP.search("Software Engineer Intern - PhD") and not TITLE_SKIP.search("Software Engineer Intern")
     jd = "Machine Learning Intern. Responsibilities: build models. " + "x " * 500
     assert looks_like_posting(jd, "Machine Learning Intern") and not looks_like_posting(jd, "Data Center Technician")
