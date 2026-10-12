@@ -90,6 +90,7 @@ notification.
   inside its window, so a laptop that was asleep at noon still scans when it wakes. A scan cut off by a shutdown or by closing the app
   is noticed at the next launch (notification, and a note in the sidebar) and rerun right away, even after its window
   closed.
+- Duplicates: a job on two boards is screened and tailored once, matched by its job id (Greenhouse, Workday, Google, ...) or, across differently formatted links, by company + title.
 - What counts as new: a diff, not a date filter. Each board is compared with its rows at the last successful
   fetch (boards backdate posting dates, so dates miss real additions). A failed fetch keeps the old snapshot, so
   an outage delays postings but never skips them. The first fetch of a board only records a baseline.
@@ -97,7 +98,10 @@ notification.
   `https://simplify.jobs/p/{id}`, a readable copy for career sites that need JavaScript), `markdown` (any README
   with `| [Name](link) | ... |` tables), `earlycareerradar`, `greenhouse` (one company's board,
   `https://boards-api.greenhouse.io/v1/boards/<token>/jobs`; `name` is the company, optional `title` regex such as
-  `(?=.*intern)(?=.*gnc)` keeps only matching roles), plus `web_search` (an agent searches for recent
+  `(?=.*intern)(?=.*gnc)` keeps only matching roles). `markdown` reads both `[Name](link)` tables and HTML tables whose last link is the
+  posting. Add `"mode": "checklist"` to a source that lists recurring programs (Google STEP, Summer of Code, ...)
+  rather than new postings: every `check_days` (7) each program is checked on its own page and screened only once
+  it's open for your season; closed ones are checked again next time. Plus `web_search` (an agent searches for recent
   postings the boards missed).
 - What gets tailored: every readable posting that isn't ruled out by a hard requirement and scores at least
   `min_fit` (1–5, default 3; set 1 to tailor everything you are eligible for and decide yourself). "Uncertain" ones (e.g. an unknown GPA minimum) are tailored too and flagged in the

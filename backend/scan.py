@@ -16,7 +16,10 @@ fetch (state "snap"), like diffing the repo file. Posting dates are unreliable (
 fetch leaves the snapshot alone, so a network outage never skips postings. The first fetch of a board only records a
 baseline. A "greenhouse" source is one company's board API (https://boards-api.greenhouse.io/v1/boards/<token>/jobs,
 the token is in the company's job links); "name" is the company and "title" a regex the job title must match (e.g.
-"(?=.*intern)(?=.*gnc)"). Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
+"(?=.*intern)(?=.*gnc)"). A source with "mode": "checklist" is a list of recurring programs (Google STEP, Summer of
+Code, ...), not a feed: every "check_days" (7) each program not screened yet is checked on its own page, and only the
+ones open for the season are screened; the rest are checked again next time. A job seen on one board is not screened
+again from another: same job id, or same company + title (years and seasons ignored). Rows over max_candidates wait in a backlog for the next scan. A source's "mirror" (e.g.
 "https://simplify.jobs/p/{id}") is a readable copy of the posting for sites that need JavaScript.
 Prints a JSON summary on the last stdout line. Fetched pages are untrusted data for the agents.
 """
@@ -195,6 +198,12 @@ def job_key(url):
     return f"{host}{path.rstrip('/').lower()}"
 
 
+def ident(r):
+    """company + title, for the same job linked differently on two boards. Years and seasons don't count."""
+    t = f"{r.get('company', '')}|{r.get('title', '')}".lower().replace("internship", "intern")
+    return re.sub(r"[^a-z0-9|]+", "", re.sub(r"\b(20\d\d|summer|fall|winter|spring)\b", "", t))
+
+
 def norm(url):  # every "same posting?" comparison in a scan goes through here
     return job_key(url)
 
@@ -264,7 +273,13 @@ def from_markdown(src, text):
             section = line.lstrip("# ").strip()
             continue
         m = re.match(r"\|\s*\[([^\]]+)\]\((https?://[^)\s]+)\)\s*\|(.*)", line)
-        if m and not re.search(r"resource|tips|mentorship|guide", section, re.I):
+        hrefs = re.findall(r'href="(https?://[^"]+)"', line) if line.startswith("|") else []
+        if not m and len(hrefs) >= 2:  # HTML tables (speedyapply): company link first, the posting's Apply link last
+            c = [re.sub(r"<[^>]+>", "", x).strip() for x in line.strip().strip("|").split("|")]
+            if len(c) >= 3:
+                out.append({"keep": True, "key": hrefs[-1], "company": c[0], "title": c[1], "url": hrefs[-1],
+                            "locations": [c[2]], "mirror": "", "note": " · ".join(x for x in c[3:] if x)[:300]})
+        elif m and not re.search(r"resource|tips|mentorship|guide", section, re.I):
             cells = [c.strip() for c in m.group(3).split("|")]
             out.append({"keep": True, "key": m.group(2), "company": m.group(1).strip(), "title": f"{m.group(1).strip()} ({section})",
                         "url": m.group(2), "locations": [], "mirror": "",
@@ -288,7 +303,10 @@ def collect(cfg, state, log):
     """Rows added to each board since its last successful fetch, minus links already screened, title skips, and
     duplicates. Updates state["snap"] only for boards that fetched fine. -> (rows, per-source counts)"""
     rows, counts, seen = [], {}, state.setdefault("seen", {})
-    snaps = state.setdefault("snap", {})
+    snaps, titles = state.setdefault("snap", {}), state.setdefault("seen_titles", {})
+
+    def fresh(r):
+        return r["url"] and norm(r["url"]) not in seen and ident(r) not in titles and not TITLE_SKIP.search(r["title"])
     for src in cfg.get("sources", []):
         name = src.get("name") or src["url"]
         try:
@@ -297,6 +315,16 @@ def collect(cfg, state, log):
         except Exception as ex:  # one broken board must not stop the scan; its snapshot stays, so nothing is lost
             counts[name] = f"error: {type(ex).__name__}: {ex}"[:200]
             log(f"{name}: {counts[name]}")
+            continue
+        if src.get("mode") == "checklist":  # not a feed: check every program on it, every check_days
+            last, every = state.setdefault("checked", {}).get(name, 0), src.get("check_days", 7)
+            if time.time() - last < every * 86400:
+                counts[name] = f"checklist, next check in {(last + every * 86400 - time.time()) / 86400:.0f} days"
+                continue
+            state["checked"][name] = int(time.time())
+            new = [r for r in found if r["keep"] and fresh(r)]
+            counts[name] = f"checklist: {len(new)} programs to check"
+            rows += [{**r, "src": name, "checklist": True} for r in new]
             continue
         # The snapshot holds the rows that passed the filters, so a posting that is reopened (inactive -> active)
         # counts as new. If the filters changed since, diff with the old ones this once: rows that only pass the
@@ -313,13 +341,13 @@ def collect(cfg, state, log):
             old_keep = {r["key"] for r in PARSERS[src["type"]]({**src, **prev_filters}, text) if r["keep"]}
             prev |= {r["key"] for r in found if r["keep"] and r["key"] not in old_keep}
         added = [r for r in found if r["keep"] and r["key"] not in prev]
-        new = [r for r in added if r["url"] and norm(r["url"]) not in seen and not TITLE_SKIP.search(r["title"])]
+        new = [r for r in added if fresh(r)]
         counts[name] = f"{len(added)} added, {len(new)} to screen" if len(added) != len(new) else len(new)
         for r in new:
             rows.append({**r, "src": name})
     uniq, keys = [], set()
     for r in rows:
-        k = (norm(r["url"]), (r["company"].lower(), r["title"].lower()))
+        k = (norm(r["url"]), ident(r))
         if k[0] in keys or k[1] in keys:
             continue
         keys.update(k)
@@ -363,7 +391,7 @@ JUDGE_SCHEMA = {"type": "object", "required": ["results"], "properties": {"resul
 
 
 def judge(cfg, chunk, scan_dir, jd_dir, digests, model):
-    keys = ("id", "company", "title", "url", "mirror", "locations", "note", "text", "fetch_error")
+    keys = ("id", "company", "title", "url", "mirror", "locations", "note", "checklist", "text", "fetch_error")
     items = json.dumps([{k: r[k][:8000] if k == "text" else r[k] for k in keys if r.get(k)} for r in chunk],
                        ensure_ascii=False, indent=1)
     prompt = (
@@ -373,7 +401,10 @@ def judge(cfg, chunk, scan_dir, jd_dir, digests, model):
         "For the others (`fetch_error` says what failed): WebFetch the url, then the `mirror` if it has one, then "
         "WebSearch for the exact title + company and fetch a page that carries the posting text. Only page=closed if "
         "a page says the posting is closed/filled or it is gone (404). If no source has the text, page=unreadable and "
-        "still judge fit from the title and company.\n"
+        "still judge fit from the title and company. Items with `checklist` are recurring programs from a "
+        "checklist, not new postings: find the program's current application page; page=read (and save its text, "
+        "step 2) only if applications for the targeted season are open now, else page=closed (past cycle, or not "
+        "open yet).\n"
         f"2. For a posting without `text` whose text you found, write it as close to verbatim as you can to "
         f"{jd_dir.as_posix()}/<id>.txt (Write tool), starting with the company, title, location and url.\n"
         "3. eligibility against the profile. Be inclusive: a missed posting costs far more than an extra resume. "
@@ -493,6 +524,7 @@ def run(a):
     if backlog:
         counts["Backlog"] = len(backlog)
     rows = [r for r in backlog if norm(r["url"]) not in {norm(x["url"]) for x in rows}] + rows
+    titles = state.setdefault("seen_titles", {})
     done = tailored_keys(a.work_dir)  # the same job id, tailored before: skip it (an unrecognized id still goes)
     again = [r for r in rows if norm(r["url"]) in done]
     if again:
@@ -501,7 +533,8 @@ def run(a):
     if cfg.get("web_search", True) and not a.dry_run:
         try:
             extra = [r for r in web_search(cfg, rows, max(1, round((start - since) / 3600)), scan_dir, model)
-                     if norm(r["url"]) not in state["seen"] and norm(r["url"]) not in done]
+                     if norm(r["url"]) not in state["seen"] and norm(r["url"]) not in done
+                     and ident(r) not in titles and ident(r) not in {ident(x) for x in rows}]
             counts["Web search"] = len(extra)
             rows += extra
         except Exception as ex:
@@ -561,13 +594,19 @@ def run(a):
     reports = reports / f"{stamp:%Y-%m-%d}"
     reports.mkdir(parents=True, exist_ok=True)
     out = reports / f"scan-{stamp:%H%M}{'-' + a.label if a.label else ''}.md"
-    report(out, label, since, counts, judged, recs, notes, cfg.get("min_fit", 3))
+    # checklist programs that aren't open: one line, not a list, and checked again next time (not marked seen)
+    waiting = {r["id"] for r in judged if r.get("checklist") and r["page"] != "read"}
+    if waiting:
+        notes.append(f"Checklist: {len(waiting)} programs not open for the season yet; checked again next week.")
+    report(out, label, since, counts, [r for r in judged if r["id"] not in waiting], recs, notes, cfg.get("min_fit", 3))
     (scan_dir / "scan.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
     if not a.dry_run:  # a dry run leaves state alone, so it never swallows postings or baselines
         for r in rows:
-            state["seen"][norm(r["url"])] = int(start)
+            if r["id"] not in waiting:
+                state["seen"][norm(r["url"])] = titles[ident(r)] = int(start)
         state["backlog"] = [{k: v for k, v in r.items() if k not in ("id", "run_id")} for r in later]
         state["seen"] = {k: v for k, v in state["seen"].items() if v > start - 180 * 86400}
+        state["seen_titles"] = {k: v for k, v in titles.items() if v > start - 180 * 86400}
         state["last_run"] = int(start)  # start, not end: postings that appear mid-scan are caught next time
         state_path.write_text(json.dumps(state), encoding="utf-8")
     ok = sum(1 for r in recs.values() if r["status"] == "done")
@@ -669,6 +708,14 @@ def selftest():
     assert not alive(dead.pid) and not held(lk)
     g = "https://{}google.com/about/careers/applications/jobs/results/75665705386549958{}"
     assert job_key(g.format("www.", "")) == job_key(g.format("", "-forward-deployed-engineering-intern-bsms-summer-2027"))
+    md = ('| Company | Position | Location | Posting |\n|---|---|---|---|\n'
+          '| <a href="https://d.com"><strong>DoorDash</strong></a> | SWE Intern - Summer 2027 | SF, CA | '
+          '<a href="https://job-boards.greenhouse.io/d/jobs/8263774"><img alt="Apply"/></a> |')
+    assert [(r["company"], r["title"], r["url"]) for r in from_markdown({}, md)] == [
+        ("DoorDash", "SWE Intern - Summer 2027", "https://job-boards.greenhouse.io/d/jobs/8263774")]
+    assert ident({"company": "Acme", "title": "Software Engineering Internship (Summer 2027)"}) == \
+        ident({"company": "ACME", "title": "Software Engineering Intern"})
+    assert ident({"company": "Acme", "title": "Data Intern"}) != ident({"company": "Acme", "title": "ML Intern"})
     assert TITLE_SKIP.search("Software Engineer Intern - PhD") and not TITLE_SKIP.search("Software Engineer Intern")
     jd = "Machine Learning Intern. Responsibilities: build models. " + "x " * 500
     assert looks_like_posting(jd, "Machine Learning Intern") and not looks_like_posting(jd, "Data Center Technician")
@@ -705,7 +752,21 @@ def selftest():
         collect(cfg, st, print)
         board["rows"][0] = {**board["rows"][0], "active": True}
         st["seen"].clear()
+        st["seen_titles"].clear()
         assert [r["company"] for r in collect(cfg, st, print)[0]] == ["A"]
+        # the same job on a second board under another link: not screened again
+        st["seen_titles"][ident({"company": "Z", "title": "Robotics Intern"})] = 1
+        board["rows"] = board["rows"] + [{"id": "z", "company_name": "Z", "title": "Robotics Intern - Summer 2027",
+                                          "url": "u9", "terms": ["Summer 2027"], "category": "Software"}]
+        assert collect(cfg, st, print)[0] == []
+        # checklist: every program not screened yet, once per check_days, regardless of the diff
+        chk = {"seen": {}, "seen_titles": {}}
+        ccfg = {"sources": [{"name": "C", "type": "listings-json", "url": "x", "mode": "checklist"}]}
+        board["rows"] = [{"id": "g", "company_name": "Google", "title": "STEP", "url": "https://g.co/step"}]
+        assert [r["checklist"] for r in collect(ccfg, chk, print)[0]] == [True]
+        assert collect(ccfg, chk, print)[0] == []  # checked this week already
+        chk["checked"]["C"] -= 8 * 86400
+        assert len(collect(ccfg, chk, print)[0]) == 1  # not open last week (not marked seen): checked again
     finally:
         get = real
     print("selftest ok")
