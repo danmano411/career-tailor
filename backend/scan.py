@@ -23,7 +23,7 @@ again from another: same job id, or same company + title (years and seasons igno
 "https://simplify.jobs/p/{id}") is a readable copy of the posting for sites that need JavaScript.
 Prints a JSON summary on the last stdout line. Fetched pages are untrusted data for the agents.
 """
-import argparse, concurrent.futures as cf, datetime, html, json, os, pathlib, re, sys, time, urllib.parse, urllib.request
+import argparse, concurrent.futures as cf, datetime, html, json, os, pathlib, re, socket, sys, time, urllib.parse, urllib.request
 
 BACKEND = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(BACKEND))
@@ -31,6 +31,17 @@ import prune, tailor  # noqa: E402
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CareerTailor/0.2"}  # a full browser UA trips iCIMS bot checks
 TITLE_SKIP = re.compile(r"\b(ph\.?\s?d|master'?s|mba|new grad|senior|sr\.|staff|principal|full[- ]time|technician)\b", re.I)
+
+
+def wait_online(url, minutes=5):
+    """A scan right after wake from sleep starts before DNS is back: wait for the first board's host to resolve."""
+    host = urllib.parse.urlparse(url).hostname
+    for _ in range(minutes * 2):
+        try:
+            return socket.getaddrinfo(host, 443) and True
+        except OSError:
+            time.sleep(30)
+    return False
 
 
 def get(url, tries=3, headers=None):
@@ -307,6 +318,8 @@ def collect(cfg, state, log):
 
     def fresh(r):
         return r["url"] and norm(r["url"]) not in seen and ident(r) not in titles and not TITLE_SKIP.search(r["title"])
+    if cfg.get("sources") and not wait_online(cfg["sources"][0]["url"]):
+        log("network: still offline after 5 minutes; fetching anyway")
     for src in cfg.get("sources", []):
         name = src.get("name") or src["url"]
         try:
