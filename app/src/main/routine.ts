@@ -159,7 +159,7 @@ function scan(label: string, onDone: () => void, key = `${day(new Date())} ${lab
     }
     const r = ran()
     // boards that couldn't be fetched (their postings wait for the next scan) and a scan that crashed show in the app
-    const warnings = Object.entries(res?.counts ?? {}).filter(([, v]) => String(v).startsWith('error')).map(([k]) => `${k} unreachable`)
+    const warnings = Object.entries(res?.counts ?? {}).filter(([, v]) => String(v).startsWith('error')).map(([k]) => `${k} unreachable that scan · retried next scan, nothing missed`)
     const last = { finished: new Date().toISOString(), label, tailored: res?.tailored ?? 0, failed: res?.failed ?? 0,
       error: res ? res.error ?? '' : err.trim().split('\n').pop()?.slice(0, 200) || 'scan crashed (see routine-last.log)',
       warnings, ...(rerun ? { rerunOf: rerun.since } : {}) }
