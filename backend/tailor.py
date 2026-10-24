@@ -209,6 +209,8 @@ def run(a):
             template, reason = choose_template(a, pathlib.Path(a.jd_file).read_text(encoding="utf-8"), job)
             rec.update(template=str(template), auto=True, auto_reason=reason)
         template = pathlib.Path(template).resolve()
+        if (template.parent / "layout.tex").is_file():  # your own LaTeX layout, used by render.py for this run
+            shutil.copyfile(template.parent / "layout.tex", job / "layout.tex")
         if template.with_suffix(".txt").is_file():  # a .txt twin you edited by hand wins if it's newer
             sync(template)
         v = validate_file(template)

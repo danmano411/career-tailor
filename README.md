@@ -185,6 +185,8 @@ python backend/tailor.py --template <template.md> --jd-file <jd.txt> --work-dir 
 - **`claude` not found**: install Claude Code, log in, and make sure `claude --version` works in a new terminal, then
   restart the app so it picks up PATH.
 - **Template is over one page**: shorten bullets or drop an entry; the app will not trim it for you.
+- **Custom layout**: put a `layout.tex` in your templates folder (copy `backend/latex/resume.tex` and keep its
+  `%%NAME%%`, `%%CONTACT%%` and `%%BODY%%` placeholders). Every run renders with it, e.g. to add section rules.
 
 ## License
 

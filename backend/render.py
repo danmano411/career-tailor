@@ -48,7 +48,7 @@ def tex(s):
     return re.sub(r"\*(.+?)\*", r"\\textit{\1}", s)
 
 
-def to_latex(md):
+def to_latex(md, layout=TEMPLATE):
     d = parse(md)
     body = []
     for sec, blocks in d["sections"]:
@@ -66,7 +66,7 @@ def to_latex(md):
             prev = blk
         body.append("")
     contact = "\n".join(tex(l) + r"\\" for l in d["head"][1:]).removesuffix(r"\\")
-    t = TEMPLATE.read_text(encoding="utf-8")
+    t = pathlib.Path(layout).read_text(encoding="utf-8")
     # plain str.replace (not re.sub) so backslashes in the filled text are kept literally
     return (t.replace("%%NAME%%", tex(d["head"][0].lstrip("# ")))
              .replace("%%CONTACT%%", contact)
@@ -150,7 +150,9 @@ def render(md_path, pdf_path):
         pdf = pathlib.Path(pdf_path).resolve()
         with tempfile.TemporaryDirectory() as tmp:  # compile aside so an open PDF viewer can't break the build
             src = pathlib.Path(tmp, pdf.with_suffix(".tex").name)
-            src.write_text(to_latex(md_text), encoding="utf-8")
+            # your own layout: a layout.tex next to the resume (tailor.py copies it from the templates folder)
+            own = pathlib.Path(md_path).resolve().parent / "layout.tex"
+            src.write_text(to_latex(md_text, own if own.is_file() else TEMPLATE), encoding="utf-8")
             r = subprocess.run([exe, "--keep-logs", "--outdir", tmp, str(src)],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode:
