@@ -76,6 +76,11 @@ link and today's date: for example, add a row to a Notion Applications database 
 duplicate. Nothing is logged when a resume is only tailored. The PDF moves to `<output>/Applied Resumes/`, which is
 never cleaned up, and the run's Open PDF follows it.
 
+Each application is also recorded with the graduation date its resume showed, in `<runs folder>/_applied-dates.json`.
+If you change your graduation date later, any run for a company you already applied to with the old date gets an
+**APPLIED AS &lt;date&gt;** flag, so you can keep what one employer sees consistent. Add applications you made outside the
+app to `applied` by hand (`{"company", "role", "date"}`); set `"until": "YYYY-MM-DD"` to turn the flag off from that day.
+
 ## Job scan routine
 
 Career Tailor can scan job boards twice a day by itself: it collects the postings that are new since the last scan,

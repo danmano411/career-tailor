@@ -42,7 +42,12 @@ export function RunDetail({ run }: { run: Run }) {
             <StatusPill r={run} />
             <span className="tag tag-lg" title={run.template}>{run.auto && <Icon name="wand" size={12} />}{templateName(run.template)}</span>
             {run.grad && <span className="tag tag-lg tag-grad">GRAD YEAR: {run.grad}</span>}
+            {run.dateClash && <span className="tag tag-lg tag-grad">APPLIED AS {run.dateClash.date}</span>}
           </div>
+          {run.dateClash && (
+            <p className="role"><strong>You already applied to {run.company} ({run.dateClash.role}) with a resume showing{' '}
+              {run.dateClash.date}.</strong> This resume shows a different graduation date; keep them consistent.</p>
+          )}
           <h1>{run.company || run.title || 'Untitled posting'}</h1>
           {run.role && <p className="role">{run.role}</p>}
           <p className="times">

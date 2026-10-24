@@ -65,9 +65,37 @@ function history(): Map<string, Rec> {
   return out
 }
 
+/** The graduation date a run's resume shows: its early date, none when redacted, else the template's Education date. */
+const shownDate = (r: Rec): string => r.grad ?? (r.redacted?.includes('Education dates') ? '' :
+  /^## Education\n(?:.*\n)*?### .*\|\|\s*(.+)$/m.exec(r.template_snapshot ?? '')?.[1]?.trim() ?? '')
+const companyKey = (c?: string) => (c ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+/** same company: equal names, or one starts with the other ("IDEMIA" / "IDEMIA North America") */
+const sameCompany = (a?: string, b?: string) => {
+  const [x, y] = [companyKey(a), companyKey(b)].sort((p, q) => p.length - q.length)
+  return x === y ? !!x : x.length >= 4 && y.startsWith(x)
+}
+
+/** -> for a run, an earlier application to the same company whose resume showed a different graduation date.
+ *  applied.py keeps <runs>/_applied-dates.json ({until?, applied: [{company, role, date}]}); "until" ends the check. */
+function dateClashes(): (r: Rec) => Run['dateClash'] {
+  const led = readJson(join(runs(), '_applied-dates.json')) as unknown as
+    { until?: string; applied?: { company: string; role: string; date: string }[] } | null
+  const past = led && !(led.until && now().slice(0, 10) >= led.until) ? led.applied ?? [] : []
+  return (r) => {
+    const shown = shownDate(r)
+    const p = !r.applied && shown ? past.find((p) => p.date && p.date !== shown && sameCompany(p.company, r.company)) : undefined
+    return p && { date: p.date, role: p.role }
+  }
+}
+
 function list(): Run[] {
   const all = new Map<string, Run>()
-  for (const [id, { template_snapshot, ...r }] of history()) all.set(id, { ...r, hasSnapshot: !!template_snapshot })
+  const clash = dateClashes()
+  for (const [id, rec] of history()) {
+    const { template_snapshot, ...r } = rec
+    const dateClash = clash(rec)
+    all.set(id, { ...r, hasSnapshot: !!template_snapshot, ...(dateClash && { dateClash }) })
+  }
   for (const [id, r] of live) {
     const disk = all.get(id)
     if (!disk || r.status === 'queued' || r.status === 'running') all.set(id, { ...disk, ...r })

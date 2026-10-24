@@ -71,6 +71,8 @@ export interface Run {
   /** the early graduation date this resume shows instead of the template's, because the posting requires it (grad_by) */
   grad?: string
   grad_by?: string
+  /** you already applied to this company with a resume showing a different graduation date (_applied-dates.json) */
+  dateClash?: { date: string; role: string }
   /** the Applied log is running right now (kept in the main process, so it survives switching runs) */
   applying?: boolean
   /** set when you pressed Applied; link = the entry the agent logged it to */
